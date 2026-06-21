@@ -1,0 +1,98 @@
+name: memora_flutter
+description: "Offline-first memory, trip & relationship tracker."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Routing
+  go_router: ^14.6.3
+
+  # Database
+  drift: ^2.23.1
+  sqlite3_flutter_libs: ^0.5.28
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # Media
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+  video_player: ^2.9.2
+  video_thumbnail: ^0.5.3
+
+  # PDF
+  pdf: ^3.11.2
+  printing: ^5.14.2
+
+  # Backup
+  archive: ^3.6.1
+  crypto: ^3.0.6
+
+  # Notifications
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.1
+
+  # Sharing
+  share_plus: ^10.1.4
+
+  # Fonts
+  google_fonts: ^6.2.1
+
+  # Utilities
+  uuid: ^4.5.1
+  intl: ^0.20.2
+  shared_preferences: ^2.3.5
+
+  # Localization
+  flutter_localizations:
+    sdk: flutter
+
+  # Splash
+  flutter_native_splash: ^2.4.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  drift_dev: ^2.23.1
+  build_runner: ^2.4.15
+  riverpod_generator: ^2.6.4
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#7B5533"
+  adaptive_icon_foreground: "assets/icon.png"
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#FBF3E3"
+  image: assets/icon.png
+  color_dark: "#2C1810"
+  image_dark: assets/icon.png
+  android_12:
+    image: assets/icon.png
+    icon_background_color: "#FBF3E3"
+    image_dark: assets/icon.png
+    icon_background_color_dark: "#2C1810"
+  web: false
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
