@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../screens/splash/splash_screen.dart';
 import '../screens/onboarding/onboarding_screen.dart';
 import '../screens/home/home_shell.dart';
 import '../screens/relationship/persons_list_screen.dart';
@@ -18,22 +18,13 @@ import '../screens/expense/wallets_screen.dart';
 import '../screens/expense/transactions_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/settings/time_categories_screen.dart';
-import 'database_provider.dart';
-
 final routerProvider = Provider<GoRouter>((ref) {
-  final db = ref.watch(databaseProvider);
-
   return GoRouter(
     initialLocation: '/loading',
     routes: [
       GoRoute(
         path: '/loading',
-        builder: (_, _) => const _LoadingScreen(),
-        redirect: (context, state) async {
-          final self = await db.personDao.getSelfPerson();
-          if (self == null) return '/onboarding';
-          return '/home';
-        },
+        builder: (_, _) => const SplashScreen(),
       ),
       GoRoute(
         path: '/onboarding',
@@ -167,10 +158,3 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class _LoadingScreen extends StatelessWidget {
-  const _LoadingScreen();
-  @override
-  Widget build(BuildContext context) => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-}

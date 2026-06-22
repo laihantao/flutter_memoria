@@ -12,7 +12,11 @@ import 'theme/app_theme.dart';
 void main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: binding);
-  await NotificationService.init();
+  try {
+    await NotificationService.init();
+  } catch (_) {
+    // Non-fatal — app runs without notifications
+  }
   FlutterNativeSplash.remove();
   runApp(const ProviderScope(child: MemoraApp()));
 }
