@@ -1,13 +1,18 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 import '../../data/app_database.dart';
 import '../../l10n/app_localizations.dart';
@@ -218,6 +223,12 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
             title: Text(memory.title),
             actions: [
               IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: l10n.memoryEditDetails,
+                onPressed: () =>
+                    context.push('/memories/${widget.id}/edit'),
+              ),
+              IconButton(
                 icon: const Icon(Icons.picture_as_pdf_outlined),
                 tooltip: l10n.memoryExportPdfTooltip,
                 onPressed: () => _exportPdf(memory),
@@ -237,7 +248,11 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
           body: TabBarView(
             controller: _tabs,
             children: [
-              _OverviewTab(memory: memory, memoryId: widget.id),
+              _OverviewTab(
+                memory: memory,
+                memoryId: widget.id,
+                onTabNavigate: _tabs.animateTo,
+              ),
               _ItineraryTab(memoryId: widget.id),
               _GalleryTab(memoryId: widget.id),
               _ExpensesTab(memoryId: widget.id),
@@ -261,54 +276,59 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
 class _OverviewTab extends ConsumerWidget {
   final Memory memory;
   final String memoryId;
-  const _OverviewTab({required this.memory, required this.memoryId});
+  final void Function(int) onTabNavigate;
+  const _OverviewTab({
+    required this.memory,
+    required this.memoryId,
+    required this.onTabNavigate,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = context.l10n;
-    final dateFmt = DateFormat('d MMM yyyy');
-    final participantsAsync =
-        ref.watch(memoryParticipantsProvider(memoryId));
+    final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
+    final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
+    final itineraryAsync = ref.watch(itineraryProvider(memoryId));
+    final txAsync = ref.watch(transactionsByMemoryProvider(memoryId));
+    final locationsAsync = ref.watch(memoryLocationsProvider(memoryId));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (memory.description != null) ...[
-            Text(memory.description!,
-                style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 16),
-          ],
-          _InfoRow(
-              icon: Icons.calendar_today_outlined,
-              text: memory.endDate != null
-                  ? '${dateFmt.format(memory.startDate)} – ${dateFmt.format(memory.endDate!)}'
-                  : dateFmt.format(memory.startDate)),
-          if (memory.locationName != null)
-            _InfoRow(
-                icon: Icons.location_on_outlined,
-                text: memory.locationName!),
-          const SizedBox(height: 16),
-          Text(l10n.memoryParticipantsSection,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          participantsAsync.when(
-            loading: () => const CircularProgressIndicator(),
-            error: (e, _) => Text(l10n.errorWith('$e')),
-            data: (participants) => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: participants
-                  .map((p) => _ParticipantChip(personId: p.personId))
-                  .toList(),
-            ),
+          _SummaryCard(
+            memory: memory,
+            memoryId: memoryId,
+            participantsAsync: participantsAsync,
           ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.edit_outlined, size: 16),
-            label: Text(l10n.memoryEditDetails),
-            onPressed: () => context.push('/memories/$memoryId/edit'),
+          const SizedBox(height: 12),
+          _QuickStatsRow(
+            photoCount: assetsAsync.value?.length ?? 0,
+            itineraryCount: itineraryAsync.value?.length ?? 0,
+            txns: txAsync.value ?? [],
+            onPhotosTap: () => onTabNavigate(2),
+            onItineraryTap: () => onTabNavigate(1),
+            onExpensesTap: () => onTabNavigate(3),
+          ),
+          if (memory.description != null &&
+              memory.description!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const _SectionLabel('描述'),
+            _DescriptionCard(description: memory.description!),
+          ],
+          locationsAsync.when(
+            data: (locations) => locations.isEmpty
+                ? const SizedBox.shrink()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      _SectionLabel('地点 · ${locations.length}'),
+                      _LocationsCard(locations: locations),
+                    ],
+                  ),
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
           ),
         ],
       ),
@@ -316,42 +336,607 @@ class _OverviewTab extends ConsumerWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _InfoRow({required this.icon, required this.text});
+// ── Summary Card ──────────────────────────────────────────────────────────────
+
+class _SummaryCard extends StatelessWidget {
+  final Memory memory;
+  final String memoryId;
+  final AsyncValue<List<MemoryParticipant>> participantsAsync;
+
+  const _SummaryCard({
+    required this.memory,
+    required this.memoryId,
+    required this.participantsAsync,
+  });
+
+  String _durationText() {
+    if (memory.endDate == null) return '';
+    final diff = memory.endDate!.difference(memory.startDate).inDays;
+    if (diff <= 0) return '';
+    return '${diff + 1}天$diff夜';
+  }
+
+  String _dateText() {
+    final yearFmt = DateFormat('d MMM yyyy');
+    final shortFmt = DateFormat('d MMM');
+    if (memory.endDate == null) return yearFmt.format(memory.startDate);
+    final sameYear = memory.startDate.year == memory.endDate!.year;
+    final start = sameYear
+        ? shortFmt.format(memory.startDate)
+        : yearFmt.format(memory.startDate);
+    return '$start – ${yearFmt.format(memory.endDate!)}';
+  }
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: AppColors.warmBrown),
-            const SizedBox(width: 8),
-            Expanded(
-                child: Text(text,
-                    style: Theme.of(context).textTheme.bodyMedium)),
-          ],
-        ),
-      );
+  Widget build(BuildContext context) {
+    final duration = _durationText();
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.chipBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _CategoryBadge(type: memory.type),
+              const Spacer(),
+              if (duration.isNotEmpty) _DurationBadge(text: duration),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(Icons.calendar_today_outlined,
+                  size: 16, color: AppColors.warmBrown),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _dateText(),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: Color(0xFFDDC9A8)),
+          const SizedBox(height: 10),
+          participantsAsync.when(
+            loading: () => const SizedBox(height: 26),
+            error: (_, _) => const SizedBox(height: 26),
+            data: (participants) => _ParticipantRow(
+              participants: participants,
+              memoryId: memoryId,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _ParticipantChip extends ConsumerWidget {
+class _CategoryBadge extends StatelessWidget {
+  final String type;
+  const _CategoryBadge({required this.type});
+
+  static IconData _iconFor(String type) => switch (type) {
+        '旅行' => Icons.flight_outlined,
+        '聚会' => Icons.people_outline,
+        '纪念日' => Icons.favorite_border,
+        '美食' => Icons.restaurant_outlined,
+        '活动' => Icons.event_outlined,
+        '日常' => Icons.wb_sunny_outlined,
+        '成就' => Icons.emoji_events_outlined,
+        _ => Icons.label_outline,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_iconFor(type), size: 14, color: AppColors.primary),
+          const SizedBox(width: 4),
+          Text(
+            type,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DurationBadge extends StatelessWidget {
+  final String text;
+  const _DurationBadge({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.warmBeige,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.warmBrown,
+        ),
+      ),
+    );
+  }
+}
+
+class _ParticipantRow extends ConsumerWidget {
+  final List<MemoryParticipant> participants;
+  final String memoryId;
+  const _ParticipantRow(
+      {required this.participants, required this.memoryId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const double avatarD = 26;
+    const double overlapStep = 18;
+    final shown = participants.take(5).toList();
+    final stackWidth = shown.isEmpty
+        ? 0.0
+        : avatarD + (shown.length - 1) * overlapStep;
+
+    return Row(
+      children: [
+        if (shown.isNotEmpty)
+          SizedBox(
+            width: stackWidth,
+            height: avatarD,
+            child: Stack(
+              children: [
+                for (int i = 0; i < shown.length; i++)
+                  Positioned(
+                    left: i * overlapStep,
+                    child: _AvatarCircle(
+                      personId: shown[i].personId,
+                      diameter: avatarD,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (shown.isNotEmpty) const SizedBox(width: 8),
+        Text(
+          '${participants.length}人',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: AppColors.warmBrown,
+          ),
+        ),
+        const Spacer(),
+        GestureDetector(
+          onTap: () => showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
+          ),
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.primary, width: 1.5),
+            ),
+            child: const Icon(Icons.add, size: 14, color: AppColors.primary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AvatarCircle extends ConsumerWidget {
   final String personId;
-  const _ParticipantChip({required this.personId});
+  final double diameter;
+  const _AvatarCircle(
+      {required this.personId, required this.diameter});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final personAsync = ref.watch(personProvider(personId));
-    return personAsync.when(
-      loading: () => const SizedBox(),
-      error: (_, _) => const SizedBox(),
-      data: (person) => person == null
-          ? const SizedBox()
-          : Chip(
-              avatar: PersonAvatar(name: person.name, radius: 12),
-              label: Text(person.name),
+    return Container(
+      width: diameter,
+      height: diameter,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.chipBg, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: personAsync.when(
+        loading: () => Container(color: AppColors.warmBeige),
+        error: (_, _) => const SizedBox(),
+        data: (person) => person == null
+            ? Container(color: AppColors.warmBeige)
+            : PersonAvatar(
+                name: person.name,
+                imagePath: person.avatarPath,
+                radius: diameter / 2,
+              ),
+      ),
+    );
+  }
+}
+
+// ── Quick Stats Row ────────────────────────────────────────────────────────────
+
+class _QuickStatsRow extends StatelessWidget {
+  final int photoCount;
+  final int itineraryCount;
+  final List<Transaction> txns;
+  final VoidCallback onPhotosTap;
+  final VoidCallback onItineraryTap;
+  final VoidCallback onExpensesTap;
+
+  const _QuickStatsRow({
+    required this.photoCount,
+    required this.itineraryCount,
+    required this.txns,
+    required this.onPhotosTap,
+    required this.onItineraryTap,
+    required this.onExpensesTap,
+  });
+
+  String get _expenseLabel {
+    if (txns.isEmpty) return '-';
+    double total = 0;
+    for (final t in txns) {
+      if (t.type == 'expense') total += t.amount;
+    }
+    if (total == 0) return '-';
+    final sym =
+        const {'MYR': 'RM', 'SGD': 'S\$'}[txns.first.currencyCode] ??
+            txns.first.currencyCode;
+    if (total >= 1000) return '$sym${(total / 1000).toStringAsFixed(1)}k';
+    return '$sym${total.toStringAsFixed(0)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _StatCard(
+            icon: Icons.photo_library_outlined,
+            value: '$photoCount',
+            label: '相册',
+            onTap: onPhotosTap,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatCard(
+            icon: Icons.map_outlined,
+            value: '$itineraryCount',
+            label: '行程站',
+            onTap: onItineraryTap,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _StatCard(
+            icon: Icons.receipt_long_outlined,
+            value: _expenseLabel,
+            label: '费用',
+            onTap: onExpensesTap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final VoidCallback onTap;
+
+  const _StatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.chipBg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: AppColors.primary),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.warmBrown,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Description Card ──────────────────────────────────────────────────────────
+
+class _DescriptionCard extends StatelessWidget {
+  final String description;
+  const _DescriptionCard({required this.description});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 3, color: AppColors.primary),
+            Expanded(
+              child: Container(
+                color: AppColors.chipBg,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                    fontStyle: FontStyle.italic,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Section label ─────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.warmBrown,
+            letterSpacing: 0.4,
+          ),
+        ),
+      );
+}
+
+// ── Locations grouped card ────────────────────────────────────────────────────
+
+class _LocationsCard extends StatelessWidget {
+  final List<MemoryLocation> locations;
+  const _LocationsCard({required this.locations});
+
+  Future<void> _openMaps(BuildContext context, String name) async {
+    final uri = Uri.parse(
+        'https://maps.google.com/?q=${Uri.encodeComponent(name)}');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('无法打开地图'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.chipBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: locations.asMap().entries.map((e) {
+          final loc = e.value;
+          final isLast = e.key == locations.length - 1;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 16, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        loc.name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.map_outlined,
+                          size: 16, color: AppColors.warmBrown),
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(),
+                      tooltip: '在地图中查看',
+                      onPressed: () => _openMaps(context, loc.name),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isLast)
+                const Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    indent: 38,
+                    color: Color(0xFFDDC9A8)),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Participant Picker Sheet ──────────────────────────────────────────────────
+
+class _ParticipantPickerSheet extends ConsumerWidget {
+  final String memoryId;
+  const _ParticipantPickerSheet({required this.memoryId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final personsAsync = ref.watch(personsProvider);
+    final selfAsync = ref.watch(selfPersonStreamProvider);
+    final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
+    final notifier = ref.read(memoryNotifierProvider.notifier);
+
+    final currentIds = participantsAsync.value?.map((p) => p.personId).toSet() ?? {};
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.35,
+      maxChildSize: 0.85,
+      builder: (ctx, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 6),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.warmBeige,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Text('参与者',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: personsAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('$e')),
+                data: (persons) {
+                  final self = selfAsync.value;
+                  final all = [?self, ...persons];
+                  if (all.isEmpty) {
+                    return const Center(child: Text('暂无联系人'));
+                  }
+                  return ListView.builder(
+                    controller: scrollCtrl,
+                    itemCount: all.length,
+                    itemBuilder: (_, i) {
+                      final person = all[i];
+                      final selected = currentIds.contains(person.id);
+                      return ListTile(
+                        leading: PersonAvatar(
+                          name: person.name,
+                          imagePath: person.avatarPath,
+                          radius: 18,
+                        ),
+                        title: Text(person.name),
+                        subtitle: person.isSelf ? const Text('（我）') : null,
+                        trailing: selected
+                            ? const Icon(Icons.check_circle,
+                                color: AppColors.primary)
+                            : const Icon(Icons.radio_button_unchecked,
+                                color: AppColors.warmBrown),
+                        onTap: () async {
+                          if (selected) {
+                            await notifier.removeParticipant(
+                                memoryId, person.id);
+                          } else {
+                            await notifier.addParticipant(
+                                memoryId, person.id);
+                          }
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -514,10 +1099,10 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
       key: Key('it_${item.id}'),
       direction: DismissDirection.startToEnd,
       background: Container(
-        margin: const EdgeInsets.only(bottom: 8),
+        margin: const EdgeInsets.only(bottom: 4),
         decoration: BoxDecoration(
           color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
@@ -557,7 +1142,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
 
   Widget _buildFlatList(List<ItineraryItem> items) {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
       itemCount: items.length,
       itemBuilder: (context, i) => _buildDismissible(items[i]),
     );
@@ -573,7 +1158,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
     final sortedKeys = grouped.keys.toList()..sort();
 
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
       itemCount: sortedKeys.length,
       itemBuilder: (context, i) {
         final dateItems = grouped[sortedKeys[i]]!;
@@ -754,47 +1339,96 @@ class _ItineraryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: isEditing ? AppColors.primary.withValues(alpha: 0.06) : null,
+      margin: const EdgeInsets.only(bottom: 4),
+      color: isEditing
+          ? AppColors.primary.withValues(alpha: 0.06)
+          : AppColors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: isEditing
             ? const BorderSide(color: AppColors.primary, width: 1.5)
-            : BorderSide.none,
+            : const BorderSide(color: Color(0xFFEDD3A8), width: 0.5),
       ),
-      child: ListTile(
-        leading: SizedBox(
-          width: 48,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(l10n.formatMonthDay(item.itemDate),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
-                      color: AppColors.primary)),
-              if (item.itemTime != null)
-                Text(item.itemTime!,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+        child: Row(
+          children: [
+            // Date + time column
+            SizedBox(
+              width: 48,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    l10n.formatMonthDay(item.itemDate),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.clip,
                     style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  if (item.itemTime != null)
+                    Text(
+                      item.itemTime!,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.warmBrown)),
-            ],
-          ),
-        ),
-        title: Text(item.title),
-        subtitle: item.locationName != null
-            ? Text('📍 ${item.locationName}',
-                style: const TextStyle(fontSize: 12))
-            : null,
-        trailing: IconButton(
-          icon: Icon(
-            Icons.edit_outlined,
-            size: 18,
-            color: isEditing ? AppColors.primary : AppColors.warmBrown,
-          ),
-          onPressed: onEdit,
+                        color: AppColors.warmBrown,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Container(width: 1, height: 22, color: AppColors.warmBeige),
+            const SizedBox(width: 10),
+            // Title + optional location
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    item.title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (item.locationName != null)
+                    Text(
+                      '📍 ${item.locationName}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.warmBrown,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            // Edit button
+            IconButton(
+              icon: Icon(
+                Icons.edit_outlined,
+                size: 14,
+                color: isEditing ? AppColors.primary : AppColors.warmBrown,
+              ),
+              padding: const EdgeInsets.all(5),
+              constraints: const BoxConstraints(),
+              onPressed: onEdit,
+            ),
+          ],
         ),
       ),
     );
@@ -821,101 +1455,189 @@ class _DateGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Date header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.08),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-            ),
+          // Compact date header
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 4),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.calendar_today_outlined,
-                    size: 14, color: AppColors.primary),
-                const SizedBox(width: 8),
+                    size: 11, color: AppColors.primary),
+                const SizedBox(width: 5),
                 Text(
                   l10n.formatMonthDay(date),
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: AppColors.primary),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
                 ),
               ],
             ),
           ),
-          // Items
-          ...items.asMap().entries.map((e) {
-            final item = e.value;
-            final isFirst = e.key == 0;
-            final isEditingThis = editingItemId == item.id;
-            return Column(
-              children: [
-                if (!isFirst)
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                ListTile(
-                  dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  tileColor: isEditingThis
-                      ? AppColors.primary.withValues(alpha: 0.06)
-                      : null,
-                  leading: item.itemTime != null
-                      ? Container(
-                          width: 44,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            item.itemTime!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        )
-                      : const SizedBox(width: 44),
-                  title: Text(item.title,
-                      style: const TextStyle(fontSize: 14)),
-                  subtitle: item.locationName != null
-                      ? Text('📍 ${item.locationName}',
-                          style: const TextStyle(fontSize: 11))
-                      : null,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+          // Events card with timeline
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFEDD3A8), width: 0.5),
+            ),
+            child: Column(
+              children: items.asMap().entries.map((e) {
+                final item = e.value;
+                final isLast = e.key == items.length - 1;
+                final isEditingThis = editingItemId == item.id;
+
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.edit_outlined,
-                          size: 18,
-                          color: isEditingThis
-                              ? AppColors.primary
-                              : AppColors.warmBrown,
+                      // Timeline column: dot + vertical line
+                      SizedBox(
+                        width: 28,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 12),
+                            Center(
+                              child: Container(
+                                width: 7,
+                                height: 7,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            if (!isLast)
+                              Expanded(
+                                child: Center(
+                                  child: Container(
+                                    width: 1.5,
+                                    color: AppColors.warmBeige,
+                                  ),
+                                ),
+                              )
+                            else
+                              const SizedBox(height: 8),
+                          ],
                         ),
-                        onPressed: () => onEdit(item),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.delete_outline,
-                            size: 18, color: Colors.red.shade400),
-                        onPressed: () => onDelete(item),
+                      // Event content
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              color: isEditingThis
+                                  ? AppColors.primary.withValues(alpha: 0.05)
+                                  : null,
+                              padding:
+                                  const EdgeInsets.fromLTRB(2, 5, 4, 5),
+                              child: Row(
+                                children: [
+                                  // Time label — fixed width prevents wrap
+                                  if (item.itemTime != null) ...[
+                                    SizedBox(
+                                      width: 38,
+                                      child: Text(
+                                        item.itemTime!,
+                                        maxLines: 1,
+                                        softWrap: false,
+                                        overflow: TextOverflow.clip,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: isEditingThis
+                                              ? AppColors.primary
+                                              : AppColors.warmBrown,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ] else
+                                    const SizedBox(width: 8),
+                                  // Title + optional location
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.title,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isEditingThis
+                                                ? AppColors.primary
+                                                : AppColors.textPrimary,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (item.locationName != null)
+                                          Text(
+                                            '📍 ${item.locationName}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.warmBrown,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Action buttons — visually small, tap target padded
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.edit_outlined,
+                                          size: 14,
+                                          color: isEditingThis
+                                              ? AppColors.primary
+                                              : AppColors.warmBrown,
+                                        ),
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => onEdit(item),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.delete_outline,
+                                          size: 14,
+                                          color: Colors.red.shade400,
+                                        ),
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => onDelete(item),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (!isLast)
+                              const Divider(
+                                height: 1,
+                                thickness: 0.5,
+                                color: Color(0xFFEDD3A8),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            );
-          }),
+                );
+              }).toList(),
+            ),
+          ),
         ],
       ),
     );
@@ -987,16 +1709,29 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
   }
 
   Future<void> _load() async {
-    if (widget.asset.type == 'video') return; // show play icon; don't decode as image
     final path = widget.asset.filePath;
     if (path.startsWith('data:')) {
-      final comma = path.indexOf(',');
-      if (comma != -1 && mounted) {
-        setState(() => _bytes = base64Decode(path.substring(comma + 1)));
+      if (widget.asset.type != 'video') {
+        final comma = path.indexOf(',');
+        if (comma != -1 && mounted) {
+          setState(() => _bytes = base64Decode(path.substring(comma + 1)));
+        }
       }
       return;
     }
     if (kIsWeb) return;
+    if (widget.asset.type == 'video') {
+      final docs = await getDocsPath();
+      final absPath = joinPath(docs, path);
+      final thumb = await VideoThumbnail.thumbnailData(
+        video: absPath,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 200,
+        quality: 75,
+      );
+      if (mounted) setState(() => _bytes = thumb);
+      return;
+    }
     final bytes = await readAppDocFileBytes(path);
     if (mounted) setState(() => _bytes = bytes);
   }
@@ -1064,19 +1799,24 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
           borderRadius: BorderRadius.circular(8),
         ),
         clipBehavior: Clip.antiAlias,
-        child: isVideo
-            ? Stack(fit: StackFit.expand, children: [
-                Container(color: Colors.black54),
-                const Center(
-                  child: Icon(Icons.play_circle_outline,
-                      color: Colors.white, size: 40),
-                ),
-              ])
-            : _bytes != null
-                ? Image.memory(_bytes!, fit: BoxFit.cover)
-                : const Center(
-                    child: Icon(Icons.image_outlined,
-                        color: AppColors.warmBrown)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_bytes != null)
+              Image.memory(_bytes!, fit: BoxFit.cover)
+            else if (isVideo)
+              Container(color: Colors.black54)
+            else
+              const Center(
+                child: Icon(Icons.image_outlined, color: AppColors.warmBrown),
+              ),
+            if (isVideo)
+              const Center(
+                child: Icon(Icons.play_circle_outline,
+                    color: Colors.white, size: 40),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1217,6 +1957,9 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
     _current = widget.initialIndex;
     _pageCtrl = PageController(initialPage: _current);
     _thumbCtrl = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _scrollThumbTo(_current),
+    );
   }
 
   @override
@@ -1374,34 +2117,320 @@ class _ZoomablePageState extends State<_ZoomablePage> {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onDoubleTapDown: _onDoubleTapDown,
-        onDoubleTap: _onDoubleTap,
-        child: widget.asset.type == 'video'
-            ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) {
+    if (widget.asset.type == 'video') {
+      return _VideoPlayerPage(asset: widget.asset);
+    }
+    return GestureDetector(
+      onDoubleTapDown: _onDoubleTapDown,
+      onDoubleTap: _onDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _ctrl,
+        minScale: 1.0,
+        maxScale: 5.0,
+        child: Center(
+          child: _bytes != null
+              ? Image.memory(_bytes!, fit: BoxFit.contain)
+              : const Icon(Icons.image_outlined,
+                  color: Colors.white54, size: 64),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Video player page ─────────────────────────────────────────────────────────
+
+class _VideoPlayerPage extends StatefulWidget {
+  final MediaAsset asset;
+  const _VideoPlayerPage({required this.asset});
+
+  @override
+  State<_VideoPlayerPage> createState() => _VideoPlayerPageState();
+}
+
+class _VideoPlayerPageState extends State<_VideoPlayerPage> {
+  VideoPlayerController? _ctrl;
+  bool _initialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    if (kIsWeb) return;
+    try {
+      final docs = await getDocsPath();
+      final absPath = joinPath(docs, widget.asset.filePath);
+      final ctrl = VideoPlayerController.file(File(absPath));
+      ctrl.addListener(_onUpdate);
+      await ctrl.initialize();
+      if (!mounted) {
+        ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _ctrl = ctrl;
+        _initialized = true;
+      });
+      ctrl.play();
+    } catch (_) {
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  void _onUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.removeListener(_onUpdate);
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    if (_ctrl == null) return;
+    _ctrl!.value.isPlaying ? _ctrl!.pause() : _ctrl!.play();
+  }
+
+  void _openFullscreen() async {
+    final pos = _ctrl?.value.position ?? Duration.zero;
+    _ctrl?.pause();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _FullscreenVideoPage(asset: widget.asset, startPosition: pos),
+      ),
+    );
+    if (mounted && _initialized) _ctrl?.play();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, color: Colors.white54, size: 48),
+            SizedBox(height: 8),
+            Text('无法播放视频', style: TextStyle(color: Colors.white54)),
+          ],
+        ),
+      );
+    }
+    if (!_initialized || _ctrl == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+      );
+    }
+    final isPlaying = _ctrl!.value.isPlaying;
+    return GestureDetector(
+      onTap: _togglePlay,
+      child: Center(
+        child: AspectRatio(
+          aspectRatio: _ctrl!.value.aspectRatio,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              VideoPlayer(_ctrl!),
+              if (!isPlaying)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: const BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded,
+                      color: Colors.white, size: 44),
+                ),
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(Icons.play_circle_outline,
-                        color: Colors.white54, size: 72),
-                    SizedBox(height: 12),
-                    Text('Video preview not supported',
-                        style: TextStyle(color: Colors.white54)),
+                    Expanded(
+                      child: VideoProgressIndicator(
+                        _ctrl!,
+                        allowScrubbing: true,
+                        colors: const VideoProgressColors(
+                          playedColor: Colors.white,
+                          bufferedColor: Colors.white38,
+                          backgroundColor: Colors.white12,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _openFullscreen,
+                      child: const Padding(
+                        padding: EdgeInsets.fromLTRB(10, 0, 10, 0),
+                        child: Icon(Icons.fullscreen,
+                            color: Colors.white, size: 22),
+                      ),
+                    ),
                   ],
                 ),
-              )
-            : InteractiveViewer(
-                transformationController: _ctrl,
-                minScale: 1.0,
-                maxScale: 5.0,
-                child: Center(
-                  child: _bytes != null
-                      ? Image.memory(_bytes!, fit: BoxFit.contain)
-                      : const Icon(Icons.image_outlined,
-                          color: Colors.white54, size: 64),
-                ),
               ),
-      );
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Fullscreen video page ─────────────────────────────────────────────────────
+
+class _FullscreenVideoPage extends StatefulWidget {
+  final MediaAsset asset;
+  final Duration startPosition;
+  const _FullscreenVideoPage(
+      {required this.asset, required this.startPosition});
+
+  @override
+  State<_FullscreenVideoPage> createState() => _FullscreenVideoPageState();
+}
+
+class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
+  VideoPlayerController? _ctrl;
+  bool _initialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Unlock all orientations so portrait videos default to portrait
+    // and the user can rotate to landscape freely.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    if (kIsWeb) return;
+    try {
+      final docs = await getDocsPath();
+      final absPath = joinPath(docs, widget.asset.filePath);
+      final ctrl = VideoPlayerController.file(File(absPath));
+      ctrl.addListener(_onUpdate);
+      await ctrl.initialize();
+      await ctrl.seekTo(widget.startPosition);
+      if (!mounted) {
+        ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _ctrl = ctrl;
+        _initialized = true;
+      });
+      ctrl.play();
+    } catch (_) {
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  void _onUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.removeListener(_onUpdate);
+    _ctrl?.dispose();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    // Explicitly restore both status bar and nav bar — edgeToEdge alone
+    // leaves the nav bar hidden, making the whole app appear fullscreen.
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    if (_ctrl == null) return;
+    _ctrl!.value.isPlaying ? _ctrl!.pause() : _ctrl!.play();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: _hasError
+          ? const Center(
+              child: Icon(Icons.error_outline, color: Colors.white54, size: 48))
+          : !_initialized || _ctrl == null
+              ? const Center(
+                  child: CircularProgressIndicator(
+                      color: Colors.white54, strokeWidth: 2))
+              : GestureDetector(
+                  onTap: _togglePlay,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Center(
+                        child: AspectRatio(
+                          aspectRatio: _ctrl!.value.aspectRatio,
+                          child: VideoPlayer(_ctrl!),
+                        ),
+                      ),
+                      if (!_ctrl!.value.isPlaying)
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              color: Colors.black45,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 52),
+                          ),
+                        ),
+                      Positioned(
+                        top: 0, left: 0, right: 0,
+                        child: SafeArea(
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.fullscreen_exit,
+                                    color: Colors.white),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0, left: 0, right: 0,
+                        child: SafeArea(
+                          child: VideoProgressIndicator(
+                            _ctrl!,
+                            allowScrubbing: true,
+                            colors: const VideoProgressColors(
+                              playedColor: Colors.white,
+                              bufferedColor: Colors.white38,
+                              backgroundColor: Colors.white12,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+    );
+  }
 }
 
 // ── Thumbnail scrubber strip ──────────────────────────────────────────────────
@@ -1436,16 +2465,18 @@ class _ThumbnailStrip extends StatelessWidget {
         height: 88,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => onIndexChanged(_indexAt(d.localPosition.dx)),
-          onPanUpdate: (d) {
-            final i = _indexAt(d.localPosition.dx);
-            if (i != currentIndex) onIndexChanged(i);
+          // Tap to jump to a specific thumbnail.
+          onTapUp: (d) => onIndexChanged(_indexAt(d.localPosition.dx)),
+          // Hold 1 s → haptic → drag to scrub photos (does not block normal scroll).
+          onLongPressStart: (d) {
+            HapticFeedback.mediumImpact();
+            onIndexChanged(_indexAt(d.localPosition.dx));
           },
+          onLongPressMoveUpdate: (d) =>
+              onIndexChanged(_indexAt(d.localPosition.dx)),
           child: ListView.builder(
             controller: scrollController,
             scrollDirection: Axis.horizontal,
-            // Programmatic scroll only — drag is handled by GestureDetector above.
-            physics: const NeverScrollableScrollPhysics(),
             padding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             itemCount: assets.length,
@@ -1478,16 +2509,29 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
   }
 
   Future<void> _load() async {
-    if (widget.asset.type == 'video') return;
     final path = widget.asset.filePath;
     if (path.startsWith('data:')) {
-      final comma = path.indexOf(',');
-      if (comma != -1 && mounted) {
-        setState(() => _bytes = base64Decode(path.substring(comma + 1)));
+      if (widget.asset.type != 'video') {
+        final comma = path.indexOf(',');
+        if (comma != -1 && mounted) {
+          setState(() => _bytes = base64Decode(path.substring(comma + 1)));
+        }
       }
       return;
     }
     if (kIsWeb) return;
+    if (widget.asset.type == 'video') {
+      final docs = await getDocsPath();
+      final absPath = joinPath(docs, path);
+      final thumb = await VideoThumbnail.thumbnailData(
+        video: absPath,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 100,
+        quality: 60,
+      );
+      if (mounted) setState(() => _bytes = thumb);
+      return;
+    }
     final bytes = await readAppDocFileBytes(path);
     if (mounted) setState(() => _bytes = bytes);
   }
@@ -1506,12 +2550,17 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
           ),
           clipBehavior: Clip.antiAlias,
           child: widget.asset.type == 'video'
-              ? Container(
-                  width: 64,
-                  height: 64,
-                  color: Colors.black54,
-                  child: const Icon(Icons.play_circle_outline,
-                      color: Colors.white70, size: 28),
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _bytes != null
+                        ? Image.memory(_bytes!, fit: BoxFit.cover)
+                        : Container(color: Colors.black54),
+                    const Center(
+                      child: Icon(Icons.play_circle_outline,
+                          color: Colors.white70, size: 28),
+                    ),
+                  ],
                 )
               : _bytes != null
                   ? Image.memory(_bytes!,

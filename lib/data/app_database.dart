@@ -29,6 +29,7 @@ String newId() => _uuid.v4();
     GroupMediaAssets,
     Memories,
     MemoryParticipants,
+    MemoryLocations,
     ItineraryItems,
     MediaAssets,
     Wallets,
@@ -46,7 +47,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -77,6 +78,24 @@ class AppDatabase extends _$AppDatabase {
                     ..where((t) => t.isDefault.equals(true)))
                   .go();
               await _seedTimeCategories();
+            }
+            if (v == 6) {
+              await m.createTable(memoryLocations);
+              // Seed from existing Memories.locationName
+              final existing = await (select(memories)
+                    ..where((t) => t.locationName.isNotNull()))
+                  .get();
+              for (final mem in existing) {
+                if (mem.locationName != null) {
+                  await into(memoryLocations).insert(
+                    MemoryLocationsCompanion.insert(
+                      id: newId(),
+                      memoryId: mem.id,
+                      name: mem.locationName!,
+                    ),
+                  );
+                }
+              }
             }
             if (v == 4) {
               await m.createTable(timeCategories);

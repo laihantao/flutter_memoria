@@ -39,6 +39,11 @@ final mediaAssetsProvider =
   return ref.watch(databaseProvider).memoryDao.watchMediaAssets(memoryId);
 });
 
+final memoryLocationsProvider =
+    StreamProvider.family<List<MemoryLocation>, String>((ref, memoryId) {
+  return ref.watch(databaseProvider).memoryDao.watchLocations(memoryId);
+});
+
 final tagsProvider = StreamProvider<List<Tag>>((ref) {
   return ref.watch(databaseProvider).memoryDao.watchAllTags();
 });
@@ -63,11 +68,13 @@ class MemoryNotifier extends AsyncNotifier<void> {
     String? coverMediaPath,
     required DateTime startDate,
     DateTime? endDate,
-    String? locationName,
+    List<String> locationNames = const [],
     List<String> participantIds = const [],
   }) async {
     final id = existingId ?? _uuid.v4();
     final now = DateTime.now();
+    // Keep locationName in sync with first entry for backward compat (PDF, etc.)
+    final locationName = locationNames.isNotEmpty ? locationNames.first : null;
 
     await _db.memoryDao.upsertMemory(MemoriesCompanion(
       id: Value(id),
@@ -91,7 +98,29 @@ class MemoryNotifier extends AsyncNotifier<void> {
       ));
     }
 
+    await _db.memoryDao.clearLocations(id);
+    for (var i = 0; i < locationNames.length; i++) {
+      await _db.memoryDao.upsertLocation(MemoryLocationsCompanion(
+        id: Value(_uuid.v4()),
+        memoryId: Value(id),
+        name: Value(locationNames[i]),
+        sortOrder: Value(i),
+      ));
+    }
+
     return id;
+  }
+
+  Future<void> addParticipant(String memoryId, String personId) async {
+    await _db.memoryDao.addParticipant(MemoryParticipantsCompanion(
+      id: Value(_uuid.v4()),
+      memoryId: Value(memoryId),
+      personId: Value(personId),
+    ));
+  }
+
+  Future<void> removeParticipant(String memoryId, String personId) async {
+    await _db.memoryDao.removeParticipant(memoryId, personId);
   }
 
   Future<void> deleteMemory(String id) async {

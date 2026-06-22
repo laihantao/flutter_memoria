@@ -145,6 +145,16 @@ class MediaAssets extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class MemoryLocations extends Table {
+  TextColumn get id => text()();
+  TextColumn get memoryId => text().references(Memories, #id)();
+  TextColumn get name => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 // ── Wallets & Transactions ────────────────────────────────────────────────────
 
 class Wallets extends Table {

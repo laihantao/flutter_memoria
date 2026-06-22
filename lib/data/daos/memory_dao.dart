@@ -7,6 +7,7 @@ part 'memory_dao.g.dart';
 @DriftAccessor(tables: [
   Memories,
   MemoryParticipants,
+  MemoryLocations,
   ItineraryItems,
   MediaAssets,
   Tags,
@@ -67,6 +68,29 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
         .get();
     return rows.map((r) => r.memoryId).toList();
   }
+
+  // ── Locations ─────────────────────────────────────────────────────────────────
+
+  Stream<List<MemoryLocation>> watchLocations(String memoryId) =>
+      (select(memoryLocations)
+            ..where((t) => t.memoryId.equals(memoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .watch();
+
+  Future<List<MemoryLocation>> getLocations(String memoryId) =>
+      (select(memoryLocations)
+            ..where((t) => t.memoryId.equals(memoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+          .get();
+
+  Future<void> upsertLocation(MemoryLocationsCompanion companion) =>
+      into(memoryLocations).insertOnConflictUpdate(companion);
+
+  Future<void> deleteLocation(String id) =>
+      (delete(memoryLocations)..where((t) => t.id.equals(id))).go();
+
+  Future<void> clearLocations(String memoryId) =>
+      (delete(memoryLocations)..where((t) => t.memoryId.equals(memoryId))).go();
 
   // ── Itinerary ─────────────────────────────────────────────────────────────────
 

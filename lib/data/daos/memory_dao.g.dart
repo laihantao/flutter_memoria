@@ -8,6 +8,7 @@ mixin _$MemoryDaoMixin on DatabaseAccessor<AppDatabase> {
   $PersonsTable get persons => attachedDatabase.persons;
   $MemoryParticipantsTable get memoryParticipants =>
       attachedDatabase.memoryParticipants;
+  $MemoryLocationsTable get memoryLocations => attachedDatabase.memoryLocations;
   $ItineraryItemsTable get itineraryItems => attachedDatabase.itineraryItems;
   $MediaAssetsTable get mediaAssets => attachedDatabase.mediaAssets;
   $TagsTable get tags => attachedDatabase.tags;

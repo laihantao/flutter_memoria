@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../providers/database_provider.dart';
@@ -21,11 +26,11 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _locationCtrl = TextEditingController();
   String _type = '旅行';
   DateTime? _startDate;
   DateTime? _endDate;
   final Set<String> _participantIds = {};
+  List<String> _locations = [];
   bool _loading = true;
   bool _saving = false;
 
@@ -44,7 +49,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
       if (memory != null) {
         _titleCtrl.text = memory.title;
         _descCtrl.text = memory.description ?? '';
-        _locationCtrl.text = memory.locationName ?? '';
         _type = memory.type;
         _startDate = memory.startDate;
         _endDate = memory.endDate;
@@ -54,6 +58,11 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
           .memoryDao
           .getParticipants(widget.memoryId!);
       _participantIds.addAll(participants.map((p) => p.personId));
+      final locs = await ref
+          .read(databaseProvider)
+          .memoryDao
+          .getLocations(widget.memoryId!);
+      _locations = locs.map((l) => l.name).toList();
     }
 
     setState(() => _loading = false);
@@ -63,7 +72,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _descCtrl.dispose();
-    _locationCtrl.dispose();
     super.dispose();
   }
 
@@ -128,9 +136,7 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
                 : _descCtrl.text.trim(),
             startDate: _startDate!,
             endDate: _endDate,
-            locationName: _locationCtrl.text.trim().isEmpty
-                ? null
-                : _locationCtrl.text.trim(),
+            locationNames: _locations,
             participantIds: _participantIds.toList(),
           );
       if (mounted) {
@@ -235,9 +241,9 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 12),
-              _LocationField(
-                controller: _locationCtrl,
-                label: l10n.memoryLocationLabel,
+              _LocationsEditor(
+                locations: _locations,
+                onChanged: (updated) => setState(() => _locations = updated),
               ),
               const SizedBox(height: 16),
               Row(
@@ -306,47 +312,343 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   }
 }
 
-class _LocationField extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-  const _LocationField({required this.controller, required this.label});
+// ── Multi-location editor ──────────────────────────────────────────────────────
 
-  @override
-  State<_LocationField> createState() => _LocationFieldState();
+class _NominatimResult {
+  final String displayName;
+  final String name;
+
+  const _NominatimResult({required this.displayName, required this.name});
+
+  factory _NominatimResult.fromJson(Map<String, dynamic> json) =>
+      _NominatimResult(
+        displayName: json['display_name'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+      );
+
+  // Short label to save — the venue/place name, or first segment of address
+  String get saveName {
+    if (name.isNotEmpty) return name;
+    return displayName.split(',').first.trim();
+  }
+
+  // Muted address line shown in dropdown below the main name
+  String get subtitle {
+    final parts = displayName.split(',');
+    final skip = name.isNotEmpty ? 1 : 0;
+    if (parts.length <= skip) return '';
+    return parts.skip(skip).take(2).join(',').trim();
+  }
 }
 
-class _LocationFieldState extends State<_LocationField> {
+class _LocationsEditor extends StatefulWidget {
+  final List<String> locations;
+  final ValueChanged<List<String>> onChanged;
+  const _LocationsEditor({required this.locations, required this.onChanged});
+
   @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_onChanged);
-  }
+  State<_LocationsEditor> createState() => _LocationsEditorState();
+}
+
+class _LocationsEditorState extends State<_LocationsEditor> {
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  List<_NominatimResult> _suggestions = [];
+  bool _isSearching = false;
+  bool _noResults = false;
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onChanged);
+    _searchCtrl.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
-  void _onChanged() => setState(() {});
+  void _onChanged(String query) {
+    _debounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _isSearching = false;
+        _noResults = false;
+      });
+      return;
+    }
+    setState(() {
+      _isSearching = true;
+      _noResults = false;
+    });
+    _debounce =
+        Timer(const Duration(milliseconds: 350), () => _search(query.trim()));
+  }
+
+  Future<void> _search(String query) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': query,
+        'format': 'json',
+        'limit': '6',
+        'addressdetails': '0',
+      });
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'MemoraApp/1.0 (personal offline memory tracker)',
+        'Accept-Language': 'zh,en',
+      });
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body) as List;
+        final results = data
+            .map((e) => _NominatimResult.fromJson(e as Map<String, dynamic>))
+            .toList();
+        setState(() {
+          _suggestions = results;
+          _isSearching = false;
+          _noResults = results.isEmpty;
+        });
+      } else {
+        setState(() => _isSearching = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  void _pick(_NominatimResult result) {
+    widget.onChanged([...widget.locations, result.saveName]);
+    _searchCtrl.clear();
+    setState(() {
+      _suggestions = [];
+      _noResults = false;
+    });
+  }
+
+  void _addManual() {
+    final text = _searchCtrl.text.trim();
+    if (text.isEmpty) return;
+    widget.onChanged([...widget.locations, text]);
+    _searchCtrl.clear();
+    setState(() {
+      _suggestions = [];
+      _noResults = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasText = widget.controller.text.isNotEmpty;
-    return TextField(
-      controller: widget.controller,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        prefixIcon: Icon(
-          Icons.location_on_outlined,
-          color: hasText ? AppColors.primary : AppColors.warmBrown,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Saved locations
+        if (widget.locations.isNotEmpty) ...[
+          ...widget.locations.asMap().entries.map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _LocationCard(
+                    name: e.value,
+                    onDelete: () {
+                      final updated = [...widget.locations]..removeAt(e.key);
+                      widget.onChanged(updated);
+                    },
+                  ),
+                ),
+              ),
+          const SizedBox(height: 4),
+        ],
+        // Search field
+        TextField(
+          controller: _searchCtrl,
+          onChanged: _onChanged,
+          decoration: InputDecoration(
+            hintText: '搜索地点…',
+            prefixIcon:
+                const Icon(Icons.search, size: 20),
+            suffixIcon: _isSearching
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {
+                            _suggestions = [];
+                            _noResults = false;
+                          });
+                        },
+                      )
+                    : null,
+            isDense: true,
+          ),
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) {
+            if (_suggestions.isNotEmpty) {
+              _pick(_suggestions.first);
+            } else {
+              _addManual();
+            }
+          },
         ),
-        suffixIcon: hasText
-            ? IconButton(
-                icon: const Icon(Icons.clear, size: 18),
-                onPressed: () => widget.controller.clear(),
-              )
-            : null,
+        // Suggestions dropdown
+        if (_suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFDDC9A8)),
+            ),
+            child: Column(
+              children: _suggestions.asMap().entries.map((e) {
+                final r = e.value;
+                final isLast = e.key == _suggestions.length - 1;
+                return InkWell(
+                  onTap: () => _pick(r),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.place_outlined,
+                                size: 16, color: AppColors.primary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    r.saveName,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (r.subtitle.isNotEmpty)
+                                    Text(
+                                      r.subtitle,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.warmBrown,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!isLast)
+                        const Divider(
+                            height: 1,
+                            indent: 38,
+                            color: Color(0xFFEDD3A8)),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        // No results — offer manual add
+        if (_noResults)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 14, color: AppColors.warmBrown),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    '未找到相关地点',
+                    style: TextStyle(
+                        fontSize: 12, color: AppColors.warmBrown),
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  onPressed: _addManual,
+                  child: const Text('手动添加',
+                      style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _LocationCard extends StatelessWidget {
+  final String name;
+  final VoidCallback onDelete;
+  const _LocationCard({required this.name, required this.onDelete});
+
+  Future<void> _openMaps(BuildContext context) async {
+    final uri = Uri.parse(
+        'https://maps.google.com/?q=${Uri.encodeComponent(name)}');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('无法打开地图'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.chipBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 12),
+          const Icon(Icons.location_on_outlined,
+              size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                  fontSize: 14, color: AppColors.textPrimary),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.map_outlined,
+                size: 18, color: AppColors.warmBrown),
+            tooltip: '在地图中查看',
+            onPressed: () => _openMaps(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close,
+                size: 18, color: AppColors.warmBrown),
+            tooltip: '删除',
+            onPressed: onDelete,
+          ),
+        ],
       ),
     );
   }
