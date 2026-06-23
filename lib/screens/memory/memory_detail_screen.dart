@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' hide Category;
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -24,8 +26,59 @@ import '../../services/pdf_service.dart';
 import '../../services/settle_up_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/file_ops.dart';
-import '../../widgets/money_chip.dart';
 import '../../widgets/person_avatar.dart';
+
+// ── Shared helpers ─────────────────────────────────────────────────────────────
+
+String _durationText(Memory memory) {
+  if (memory.endDate == null) return '';
+  final diff = memory.endDate!.difference(memory.startDate).inDays;
+  if (diff <= 0) return '';
+  return '${diff + 1}天$diff夜';
+}
+
+String _dateText(Memory memory) {
+  final yearFmt = DateFormat('d MMM yyyy');
+  final shortFmt = DateFormat('d MMM');
+  if (memory.endDate == null) return yearFmt.format(memory.startDate);
+  final sameYear = memory.startDate.year == memory.endDate!.year;
+  final start = sameYear
+      ? shortFmt.format(memory.startDate)
+      : yearFmt.format(memory.startDate);
+  return '$start – ${yearFmt.format(memory.endDate!)}';
+}
+
+String _countdownText(DateTime startDate) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final start = DateTime(startDate.year, startDate.month, startDate.day);
+  final diff = start.difference(today).inDays;
+  if (diff > 0) return '还有 $diff 天';
+  if (diff == 0) return '就是今天 ✦';
+  return '已成回忆';
+}
+
+String _typeEmoji(String type) => switch (type) {
+      '旅行' => '✈️',
+      '聚会' => '👥',
+      '纪念日' => '❤️',
+      '美食' => '🍜',
+      '活动' => '🎉',
+      '日常' => '☀️',
+      '成就' => '🏆',
+      _ => '📌',
+    };
+
+String _currencySym(List<Transaction> txns) =>
+    const {'MYR': 'RM', 'SGD': 'S\$'}[txns.firstOrNull?.currencyCode] ??
+    (txns.firstOrNull?.currencyCode ?? 'RM');
+
+String _formatAmt(double total, String sym) {
+  if (total >= 1000) return '$sym ${(total / 1000).toStringAsFixed(1)}k';
+  return '$sym ${total.toStringAsFixed(2)}';
+}
+
+// ── Main screen ────────────────────────────────────────────────────────────────
 
 class MemoryDetailScreen extends ConsumerStatefulWidget {
   final String id;
@@ -39,17 +92,53 @@ class MemoryDetailScreen extends ConsumerStatefulWidget {
 class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
+  late final ScrollController _overviewScrollCtrl;
+  bool _heroExpanded = true;
 
   @override
   void initState() {
     super.initState();
+    _overviewScrollCtrl = ScrollController();
+    _overviewScrollCtrl.addListener(_onOverviewScroll);
     _tabs = TabController(length: 4, vsync: this);
-    _tabs.addListener(() => setState(() {}));
+    _tabs.addListener(_onTabChange);
+  }
+
+  void _onTabChange() {
+    if (!mounted) return;
+    setState(() {
+      if (_tabs.index != 0) {
+        _heroExpanded = false;
+      } else {
+        final offset = _overviewScrollCtrl.hasClients
+            ? _overviewScrollCtrl.offset
+            : 0.0;
+        // Only expand if already at very top
+        _heroExpanded = offset <= 0;
+      }
+    });
+  }
+
+  void _onOverviewScroll() {
+    if (!mounted || _tabs.index != 0) return;
+    final offset = _overviewScrollCtrl.offset;
+    if (_heroExpanded && offset >= 80) {
+      setState(() => _heroExpanded = false);
+    }
+    // Re-expanding is handled by _onTopOverscroll (second upward gesture at top)
+  }
+
+  void _onTopOverscroll() {
+    if (!mounted || _tabs.index != 0 || _heroExpanded) return;
+    setState(() => _heroExpanded = true);
   }
 
   @override
   void dispose() {
+    _tabs.removeListener(_onTabChange);
     _tabs.dispose();
+    _overviewScrollCtrl.removeListener(_onOverviewScroll);
+    _overviewScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -205,6 +294,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final topPad = MediaQuery.of(context).padding.top;
     final l10n = context.l10n;
     final memoryAsync = ref.watch(memoryProvider(widget.id));
 
@@ -215,200 +305,363 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
           Scaffold(body: Center(child: Text(l10n.errorWith('$e')))),
       data: (memory) {
         if (memory == null) {
-          return Scaffold(
-              body: Center(child: Text(l10n.memoryNotFound)));
+          return Scaffold(body: Center(child: Text(l10n.memoryNotFound)));
         }
         return Scaffold(
-          appBar: AppBar(
-            title: Text(memory.title),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                tooltip: l10n.memoryEditDetails,
-                onPressed: () =>
-                    context.push('/memories/${widget.id}/edit'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                tooltip: l10n.memoryExportPdfTooltip,
-                onPressed: () => _exportPdf(memory),
-              ),
-            ],
-            bottom: TabBar(
-              controller: _tabs,
-              isScrollable: true,
-              tabs: [
-                Tab(text: l10n.memoryTabOverview),
-                Tab(text: l10n.memoryTabItinerary),
-                Tab(text: l10n.memoryTabGallery),
-                Tab(text: l10n.memoryTabExpenses),
-              ],
-            ),
-          ),
-          body: TabBarView(
-            controller: _tabs,
+          body: Column(
             children: [
-              _OverviewTab(
-                memory: memory,
-                memoryId: widget.id,
-                onTabNavigate: _tabs.animateTo,
+              // Hero / mini-header area — animates between full hero and compact bar
+              ClipRect(
+               child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                height: _heroExpanded ? (260.0 + topPad) : (topPad + 56.0),
+                child: SizedBox(
+                  height: 260 + topPad,
+                  width: double.infinity,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _HeroCover(
+                        memory: memory,
+                        memoryId: widget.id,
+                        onBack: () => context.pop(),
+                        onEdit: () =>
+                            context.push('/memories/${widget.id}/edit'),
+                        onPdf: () => _exportPdf(memory),
+                      ),
+                      // Mini header fades in when hero collapses
+                      AnimatedOpacity(
+                        opacity: _heroExpanded ? 0.0 : 1.0,
+                        duration: const Duration(milliseconds: 220),
+                        child: IgnorePointer(
+                          ignoring: _heroExpanded,
+                          child: _MiniHeader(
+                            memory: memory,
+                            topPad: topPad,
+                            onBack: () => context.pop(),
+                            onEdit: () =>
+                                context.push('/memories/${widget.id}/edit'),
+                            onPdf: () => _exportPdf(memory),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+               ),
               ),
-              _ItineraryTab(memoryId: widget.id),
-              _GalleryTab(memoryId: widget.id),
-              _ExpensesTab(memoryId: widget.id),
+              _MemoryTabBar(controller: _tabs, l10n: l10n),
+              AnimatedCrossFade(
+                duration: const Duration(milliseconds: 280),
+                firstChild: const SizedBox(width: double.infinity),
+                secondChild: _CollapsedInfoStrip(
+                  memory: memory,
+                  memoryId: widget.id,
+                ),
+                crossFadeState: (_heroExpanded || _tabs.index != 0)
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabs,
+                  children: [
+                    _OverviewTab(
+                      memory: memory,
+                      memoryId: widget.id,
+                      onTabNavigate: _tabs.animateTo,
+                      scrollController: _overviewScrollCtrl,
+                      onTopOverscroll: _onTopOverscroll,
+                    ),
+                    _ItineraryTab(memoryId: widget.id, memory: memory),
+                    _GalleryTab(memoryId: widget.id),
+                    _ExpensesTab(memoryId: widget.id, budget: memory.budget),
+                  ],
+                ),
+              ),
             ],
           ),
           floatingActionButton: _tabs.index == 2
               ? FloatingActionButton(
                   onPressed: _pickMedia,
-                  child:
-                      const Icon(Icons.add_photo_alternate_outlined),
+                  child: const Icon(Icons.add_photo_alternate_outlined),
                 )
-              : null,
+              : _tabs.index == 3
+                  ? FloatingActionButton(
+                      onPressed: () =>
+                          context.push('/memories/${widget.id}/expenses/new'),
+                      child: const Icon(Icons.add),
+                    )
+                  : null,
         );
       },
     );
   }
 }
 
-// ── Overview Tab ──────────────────────────────────────────────────────────────
+// ── Hero Cover ─────────────────────────────────────────────────────────────────
 
-class _OverviewTab extends ConsumerWidget {
+class _HeroCover extends ConsumerStatefulWidget {
   final Memory memory;
   final String memoryId;
-  final void Function(int) onTabNavigate;
-  const _OverviewTab({
+  final VoidCallback onBack;
+  final VoidCallback onEdit;
+  final VoidCallback onPdf;
+
+  const _HeroCover({
     required this.memory,
     required this.memoryId,
-    required this.onTabNavigate,
+    required this.onBack,
+    required this.onEdit,
+    required this.onPdf,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
-    final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
-    final itineraryAsync = ref.watch(itineraryProvider(memoryId));
-    final txAsync = ref.watch(transactionsByMemoryProvider(memoryId));
-    final locationsAsync = ref.watch(memoryLocationsProvider(memoryId));
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SummaryCard(
-            memory: memory,
-            memoryId: memoryId,
-            participantsAsync: participantsAsync,
-          ),
-          const SizedBox(height: 12),
-          _QuickStatsRow(
-            photoCount: assetsAsync.value?.length ?? 0,
-            itineraryCount: itineraryAsync.value?.length ?? 0,
-            txns: txAsync.value ?? [],
-            onPhotosTap: () => onTabNavigate(2),
-            onItineraryTap: () => onTabNavigate(1),
-            onExpensesTap: () => onTabNavigate(3),
-          ),
-          if (memory.description != null &&
-              memory.description!.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const _SectionLabel('描述'),
-            _DescriptionCard(description: memory.description!),
-          ],
-          locationsAsync.when(
-            data: (locations) => locations.isEmpty
-                ? const SizedBox.shrink()
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 16),
-                      _SectionLabel('地点 · ${locations.length}'),
-                      _LocationsCard(locations: locations),
-                    ],
-                  ),
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
+  ConsumerState<_HeroCover> createState() => _HeroCoverState();
 }
 
-// ── Summary Card ──────────────────────────────────────────────────────────────
+class _HeroCoverState extends ConsumerState<_HeroCover> {
+  Uint8List? _coverBytes;
+  String? _loadedPath;
 
-class _SummaryCard extends StatelessWidget {
-  final Memory memory;
-  final String memoryId;
-  final AsyncValue<List<MemoryParticipant>> participantsAsync;
-
-  const _SummaryCard({
-    required this.memory,
-    required this.memoryId,
-    required this.participantsAsync,
-  });
-
-  String _durationText() {
-    if (memory.endDate == null) return '';
-    final diff = memory.endDate!.difference(memory.startDate).inDays;
-    if (diff <= 0) return '';
-    return '${diff + 1}天$diff夜';
+  @override
+  void initState() {
+    super.initState();
+    final path = widget.memory.coverMediaPath;
+    if (path != null) _loadPath(path);
   }
 
-  String _dateText() {
-    final yearFmt = DateFormat('d MMM yyyy');
-    final shortFmt = DateFormat('d MMM');
-    if (memory.endDate == null) return yearFmt.format(memory.startDate);
-    final sameYear = memory.startDate.year == memory.endDate!.year;
-    final start = sameYear
-        ? shortFmt.format(memory.startDate)
-        : yearFmt.format(memory.startDate);
-    return '$start – ${yearFmt.format(memory.endDate!)}';
+  @override
+  void didUpdateWidget(_HeroCover old) {
+    super.didUpdateWidget(old);
+    final path = widget.memory.coverMediaPath;
+    if (path != old.memory.coverMediaPath && path != null) _loadPath(path);
+  }
+
+  Future<void> _loadPath(String path) async {
+    if (path == _loadedPath) return;
+    _loadedPath = path;
+    Uint8List? bytes;
+    if (path.startsWith('data:')) {
+      final comma = path.indexOf(',');
+      if (comma != -1) bytes = base64Decode(path.substring(comma + 1));
+    } else if (!kIsWeb) {
+      bytes = await readAppDocFileBytes(path);
+    }
+    if (mounted && bytes != null) setState(() => _coverBytes = bytes);
+  }
+
+  void _maybeLoadFallback(String path) {
+    if (path == _loadedPath) return;
+    _loadPath(path);
   }
 
   @override
   Widget build(BuildContext context) {
-    final duration = _durationText();
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.chipBg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final gradient = isDark ? kCoverGradientDark : kCoverGradientLight;
+    final memory = widget.memory;
+
+    // Fallback: first photo asset when no coverMediaPath
+    if (_coverBytes == null && memory.coverMediaPath == null) {
+      final assets = ref.watch(mediaAssetsProvider(widget.memoryId)).value;
+      if (assets != null && assets.isNotEmpty) {
+        final first = assets.firstWhere(
+          (a) => a.type == 'photo',
+          orElse: () => assets.first,
+        );
+        _maybeLoadFallback(first.filePath);
+      }
+    }
+
+    final participantsAsync =
+        ref.watch(memoryParticipantsProvider(widget.memoryId));
+    final participants = participantsAsync.value ?? [];
+    final duration = _durationText(memory);
+    final dateStr = _dateText(memory);
+    final countdown = _countdownText(memory.startDate);
+    final topPad = MediaQuery.of(context).padding.top;
+
+    return SizedBox(
+      height: 260 + topPad,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Row(
-            children: [
-              _CategoryBadge(type: memory.type),
-              const Spacer(),
-              if (duration.isNotEmpty) _DurationBadge(text: duration),
-            ],
+          // Cover image or gradient
+          if (_coverBytes != null)
+            Image.memory(_coverBytes!, fit: BoxFit.cover)
+          else
+            DecoratedBox(
+              decoration: BoxDecoration(gradient: gradient),
+            ),
+
+          // Radial highlight
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.4, -0.8),
+                radius: 1.2,
+                colors: [
+                  Colors.white.withValues(alpha: 0.22),
+                  Colors.transparent,
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.calendar_today_outlined,
-                  size: 16, color: AppColors.warmBrown),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _dateText(),
-                  style: Theme.of(context).textTheme.bodyMedium,
+
+          // Bottom dark overlay
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: (260 + topPad) * 0.62,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    const Color(0xFF30180C).withValues(alpha: 0.78),
+                    const Color(0xFF30180C).withValues(alpha: 0.25),
+                    Colors.transparent,
+                  ],
+                  stops: const [0.0, 0.45, 1.0],
                 ),
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: Color(0xFFDDC9A8)),
-          const SizedBox(height: 10),
-          participantsAsync.when(
-            loading: () => const SizedBox(height: 26),
-            error: (_, _) => const SizedBox(height: 26),
-            data: (participants) => _ParticipantRow(
-              participants: participants,
-              memoryId: memoryId,
+
+          // Back + edit + pdf buttons
+          Positioned(
+            top: topPad + 6,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _GlassButton(
+                  onTap: widget.onBack,
+                  child: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white, size: 16),
+                ),
+                Row(
+                  children: [
+                    _GlassButton(
+                      onTap: widget.onEdit,
+                      child: const Icon(Icons.edit_outlined,
+                          color: Colors.white, size: 16),
+                    ),
+                    const SizedBox(width: 9),
+                    _GlassButton(
+                      onTap: widget.onPdf,
+                      child: Text(
+                        'PDF',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Countdown pill
+          Positioned(
+            top: topPad + 52,
+            right: 16,
+            child: _CountdownPill(text: countdown),
+          ),
+
+          // Bottom info: type + duration + title + date + avatars
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Type badge + duration chip
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 11, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_typeEmoji(memory.type)} ${memory.type}',
+                        style: GoogleFonts.notoSansSc(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryDeep,
+                        ),
+                      ),
+                    ),
+                    if (duration.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 11, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          duration,
+                          style: GoogleFonts.notoSansSc(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Title
+                Text(
+                  memory.title,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    height: 1.05,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                // Date
+                Row(
+                  children: [
+                    const Text('📅', style: TextStyle(fontSize: 13)),
+                    const SizedBox(width: 7),
+                    Text(
+                      dateStr,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.95),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 13),
+                // Avatar stack + participant count
+                _HeroAvatarStack(
+                  participants: participants,
+                  memoryId: widget.memoryId,
+                ),
+              ],
             ),
           ),
         ],
@@ -417,39 +670,281 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _CategoryBadge extends StatelessWidget {
-  final String type;
-  const _CategoryBadge({required this.type});
+// ── Mini header (shown when hero is collapsed) ─────────────────────────────────
 
-  static IconData _iconFor(String type) => switch (type) {
-        '旅行' => Icons.flight_outlined,
-        '聚会' => Icons.people_outline,
-        '纪念日' => Icons.favorite_border,
-        '美食' => Icons.restaurant_outlined,
-        '活动' => Icons.event_outlined,
-        '日常' => Icons.wb_sunny_outlined,
-        '成就' => Icons.emoji_events_outlined,
-        _ => Icons.label_outline,
-      };
+class _MiniHeader extends StatelessWidget {
+  final Memory memory;
+  final double topPad;
+  final VoidCallback onBack;
+  final VoidCallback onEdit;
+  final VoidCallback onPdf;
+
+  const _MiniHeader({
+    required this.memory,
+    required this.topPad,
+    required this.onBack,
+    required this.onEdit,
+    required this.onPdf,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? AppColors.darkBackground : AppColors.background;
+    final muted = isDark ? AppColors.darkMuted : AppColors.muted;
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+
+    return Container(
+      color: bg,
+      padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
+      child: Row(
+        children: [
+          _MiniCircleBtn(
+            onTap: onBack,
+            bg: muted,
+            child: Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: primary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              memory.title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.notoSansSc(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: textColor,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 10),
+          _MiniCircleBtn(
+            onTap: onEdit,
+            bg: muted,
+            child: Icon(Icons.edit_outlined, size: 15, color: primary),
+          ),
+          const SizedBox(width: 8),
+          _MiniCircleBtn(
+            onTap: onPdf,
+            bg: muted,
+            child: Text(
+              'PDF',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniCircleBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  final Widget child;
+  final Color bg;
+  const _MiniCircleBtn({required this.onTap, required this.child, required this.bg});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+          child: Center(child: child),
+        ),
+      );
+}
+
+// ── Collapsed info strip (shown below tab bar when hero is hidden) ─────────────
+
+class _CollapsedInfoStrip extends ConsumerWidget {
+  final Memory memory;
+  final String memoryId;
+  const _CollapsedInfoStrip({required this.memory, required this.memoryId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? AppColors.darkBackground : AppColors.background;
+    final border = isDark ? AppColors.darkBorder : AppColors.border;
+    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final primaryTint = isDark ? AppColors.darkPrimaryTint : AppColors.primaryTint;
+
+    final duration = _durationText(memory);
+    final dateStr = _dateText(memory);
+
+    final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
+    final participants = participantsAsync.value ?? [];
+    const d = 26.0;
+    const step = 9.0;
+    final shown = participants.take(4).toList();
+    final stackW = shown.isEmpty ? 0.0 : d + (shown.length - 1) * (d - step);
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border(bottom: BorderSide(color: border, width: 0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              // Type badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(
+                  color: primaryTint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_typeEmoji(memory.type)} ${memory.type}',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 11, fontWeight: FontWeight.w700, color: primary,
+                  ),
+                ),
+              ),
+              if (duration.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(
+                  duration,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12, fontWeight: FontWeight.w600, color: textMuted,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              const Text('📅', style: TextStyle(fontSize: 11)),
+              const SizedBox(width: 4),
+              Text(
+                dateStr,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5, fontWeight: FontWeight.w500, color: textMuted,
+                ),
+              ),
+            ],
+          ),
+          if (participants.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (shown.isNotEmpty)
+                  SizedBox(
+                    width: stackW,
+                    height: d,
+                    child: Stack(
+                      children: [
+                        for (int i = 0; i < shown.length; i++)
+                          Positioned(
+                            left: i * (d - step),
+                            child: _AvatarCircle(
+                              personId: shown[i].personId,
+                              diameter: d,
+                              borderColor: bg,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                Text(
+                  '${participants.length} 人同行',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 12, fontWeight: FontWeight.w600, color: textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Glass button (hero overlay) ────────────────────────────────────────────────
+
+class _GlassButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final Widget child;
+  const _GlassButton({required this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0x2EFFFFFF),
+              ),
+              child: Center(child: child),
+            ),
+          ),
+        ),
+      );
+}
+
+// ── Countdown pill ─────────────────────────────────────────────────────────────
+
+class _CountdownPill extends StatelessWidget {
+  final String text;
+  const _CountdownPill({required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            offset: const Offset(0, 8),
+            blurRadius: 20,
+            spreadRadius: -6,
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_iconFor(type), size: 14, color: AppColors.primary),
-          const SizedBox(width: 4),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  spreadRadius: 4,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 7),
           Text(
-            type,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            text,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
               color: AppColors.primary,
             ),
           ),
@@ -459,123 +954,242 @@ class _CategoryBadge extends StatelessWidget {
   }
 }
 
-class _DurationBadge extends StatelessWidget {
-  final String text;
-  const _DurationBadge({required this.text});
+// ── Hero avatar stack ──────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.warmBeige,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppColors.warmBrown,
-        ),
-      ),
-    );
-  }
-}
-
-class _ParticipantRow extends ConsumerWidget {
+class _HeroAvatarStack extends ConsumerWidget {
   final List<MemoryParticipant> participants;
   final String memoryId;
-  const _ParticipantRow(
+  const _HeroAvatarStack(
       {required this.participants, required this.memoryId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    const double avatarD = 26;
-    const double overlapStep = 18;
-    final shown = participants.take(5).toList();
-    final stackWidth = shown.isEmpty
-        ? 0.0
-        : avatarD + (shown.length - 1) * overlapStep;
+    const d = 31.0;
+    const step = 11.0;
+    final shown = participants.take(4).toList();
+    final stackWidth =
+        shown.isEmpty ? 0.0 : d + (shown.length - 1) * (d - step);
 
-    return Row(
-      children: [
-        if (shown.isNotEmpty)
-          SizedBox(
-            width: stackWidth,
-            height: avatarD,
-            child: Stack(
-              children: [
-                for (int i = 0; i < shown.length; i++)
-                  Positioned(
-                    left: i * overlapStep,
-                    child: _AvatarCircle(
-                      personId: shown[i].personId,
-                      diameter: avatarD,
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
+      ),
+      child: Row(
+        children: [
+          if (shown.isNotEmpty)
+            SizedBox(
+              width: stackWidth,
+              height: d,
+              child: Stack(
+                children: [
+                  for (int i = 0; i < shown.length; i++)
+                    Positioned(
+                      left: i * (d - step),
+                      child: _AvatarCircle(
+                        personId: shown[i].personId,
+                        diameter: d,
+                        borderColor: AppColors.primaryDeep,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
+            ),
+          if (shown.isNotEmpty) const SizedBox(width: 10),
+          Text(
+            '${participants.length} 人同行',
+            style: GoogleFonts.notoSansSc(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
             ),
           ),
-        if (shown.isNotEmpty) const SizedBox(width: 8),
-        Text(
-          '${participants.length}人',
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: AppColors.warmBrown,
-          ),
-        ),
-        const Spacer(),
-        GestureDetector(
-          onTap: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
-          ),
-          child: Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.primary, width: 1.5),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
             ),
-            child: const Icon(Icons.add, size: 14, color: AppColors.primary),
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.7), width: 1.5),
+              ),
+              child: const Icon(Icons.add, size: 14, color: Colors.white),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _AvatarCircle extends ConsumerWidget {
-  final String personId;
-  final double diameter;
-  const _AvatarCircle(
-      {required this.personId, required this.diameter});
+// ── Custom Tab Bar ─────────────────────────────────────────────────────────────
+
+class _MemoryTabBar extends StatelessWidget {
+  final TabController controller;
+  final AppLocalizations l10n;
+  const _MemoryTabBar({required this.controller, required this.l10n});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final bg = isDark ? AppColors.darkBackground : AppColors.background;
+    final border = isDark ? AppColors.darkBorder : AppColors.border;
+    final tabs = [
+      l10n.memoryTabOverview,
+      l10n.memoryTabItinerary,
+      l10n.memoryTabGallery,
+      l10n.memoryTabExpenses,
+    ];
+
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => Container(
+        color: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+              child: Row(
+                children: tabs.asMap().entries.map((e) {
+                  final i = e.key;
+                  final label = e.value;
+                  final active = controller.index == i;
+                  return GestureDetector(
+                    onTap: () => controller.animateTo(i),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 15),
+                          Text(
+                            label,
+                            style: GoogleFonts.notoSansSc(
+                              fontSize: 15,
+                              fontWeight:
+                                  active ? FontWeight.w700 : FontWeight.w500,
+                              color: active ? primary : textMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: active ? 22 : 0,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: primary,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            Divider(height: 1, thickness: 1, color: border),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Overview Tab ───────────────────────────────────────────────────────────────
+
+class _OverviewTab extends ConsumerWidget {
+  final Memory memory;
+  final String memoryId;
+  final void Function(int) onTabNavigate;
+  final ScrollController scrollController;
+  final VoidCallback? onTopOverscroll;
+  const _OverviewTab({
+    required this.memory,
+    required this.memoryId,
+    required this.onTabNavigate,
+    required this.scrollController,
+    this.onTopOverscroll,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final personAsync = ref.watch(personProvider(personId));
-    return Container(
-      width: diameter,
-      height: diameter,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.chipBg, width: 1.5),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: personAsync.when(
-        loading: () => Container(color: AppColors.warmBeige),
-        error: (_, _) => const SizedBox(),
-        data: (person) => person == null
-            ? Container(color: AppColors.warmBeige)
-            : PersonAvatar(
-                name: person.name,
-                imagePath: person.avatarPath,
-                radius: diameter / 2,
+    final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
+    final itineraryAsync = ref.watch(itineraryProvider(memoryId));
+    final txAsync = ref.watch(transactionsByMemoryProvider(memoryId));
+    final locationsAsync = ref.watch(memoryLocationsProvider(memoryId));
+
+    return NotificationListener<OverscrollNotification>(
+      onNotification: (n) {
+        // Negative overscroll = user pulling up while already at top
+        if (n.overscroll < 0) onTopOverscroll?.call();
+        return false;
+      },
+      child: SingleChildScrollView(
+      controller: scrollController,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 14),
+          // Stat cards
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _QuickStatsRow(
+              photoCount: assetsAsync.value?.length ?? 0,
+              itineraryCount: itineraryAsync.value?.length ?? 0,
+              txns: txAsync.value ?? [],
+              budget: memory.budget,
+              onPhotosTap: () => onTabNavigate(2),
+              onItineraryTap: () => onTabNavigate(1),
+              onExpensesTap: () => onTabNavigate(3),
+            ),
+          ),
+
+          // Description QuoteBar
+          if (memory.description != null &&
+              memory.description!.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SectionLabel('描述'),
+                  const SizedBox(height: 6),
+                  _QuoteBar(text: memory.description!),
+                ],
               ),
+            ),
+          ],
+
+          // Location horizontal scroll
+          locationsAsync.when(
+            data: (locations) => locations.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: _LocationsSection(locations: locations),
+                  ),
+            loading: () => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
+          ),
+
+          const SizedBox(height: 20),
+        ],
+      ),
       ),
     );
   }
@@ -587,6 +1201,7 @@ class _QuickStatsRow extends StatelessWidget {
   final int photoCount;
   final int itineraryCount;
   final List<Transaction> txns;
+  final double? budget;
   final VoidCallback onPhotosTap;
   final VoidCallback onItineraryTap;
   final VoidCallback onExpensesTap;
@@ -595,6 +1210,7 @@ class _QuickStatsRow extends StatelessWidget {
     required this.photoCount,
     required this.itineraryCount,
     required this.txns,
+    required this.budget,
     required this.onPhotosTap,
     required this.onItineraryTap,
     required this.onExpensesTap,
@@ -607,93 +1223,200 @@ class _QuickStatsRow extends StatelessWidget {
       if (t.type == 'expense') total += t.amount;
     }
     if (total == 0) return '-';
-    final sym =
-        const {'MYR': 'RM', 'SGD': 'S\$'}[txns.first.currencyCode] ??
-            txns.first.currencyCode;
-    if (total >= 1000) return '$sym${(total / 1000).toStringAsFixed(1)}k';
-    return '$sym${total.toStringAsFixed(0)}';
+    return _formatAmt(total, _currencySym(txns));
   }
+
+  String get _budgetLabel => _formatAmt(budget!, _currencySym(txns));
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            icon: Icons.photo_library_outlined,
-            value: '$photoCount',
-            label: '相册',
-            onTap: onPhotosTap,
-          ),
+    final hasBudget = budget != null && budget! > 0;
+    final compact = hasBudget;
+
+    final cards = <Widget>[
+      Expanded(
+        child: _StatCard(
+          emoji: '🖼️',
+          value: '$photoCount',
+          label: '相册',
+          compact: compact,
+          onTap: onPhotosTap,
         ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _StatCard(
+          emoji: '🗺️',
+          value: '$itineraryCount',
+          label: '行程站',
+          compact: compact,
+          onTap: onItineraryTap,
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _StatCard(
+          emoji: '🧾',
+          value: _expenseLabel,
+          label: '费用',
+          compact: compact,
+          isAmount: true,
+          onTap: onExpensesTap,
+        ),
+      ),
+      if (hasBudget) ...[
         const SizedBox(width: 8),
         Expanded(
           child: _StatCard(
-            icon: Icons.map_outlined,
-            value: '$itineraryCount',
-            label: '行程站',
-            onTap: onItineraryTap,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _StatCard(
-            icon: Icons.receipt_long_outlined,
-            value: _expenseLabel,
-            label: '费用',
+            emoji: '👛',
+            value: _budgetLabel,
+            label: '预算',
+            compact: compact,
+            isAmount: true,
+            isPrimary: true,
             onTap: onExpensesTap,
           ),
         ),
       ],
-    );
+    ];
+
+    return Row(children: cards);
   }
 }
 
+// ── Stat Card ──────────────────────────────────────────────────────────────────
+
 class _StatCard extends StatelessWidget {
-  final IconData icon;
+  final String emoji;
   final String value;
   final String label;
+  final bool compact;
+  final bool isAmount;
+  final bool isPrimary;
   final VoidCallback onTap;
 
   const _StatCard({
-    required this.icon,
+    required this.emoji,
     required this.value,
     required this.label,
     required this.onTap,
+    this.compact = false,
+    this.isAmount = false,
+    this.isPrimary = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final double emojiSize = compact ? 17 : 18;
+    final double valueFontSize =
+        isAmount ? (compact ? 14 : 17) : (compact ? 18 : 21);
+    final double vPad = compact ? 13 : 15;
+    final double hPad = compact ? 4 : 8;
+    final double radius = compact ? 16 : 18;
+
+    if (isPrimary) {
+      return GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: vPad, horizontal: hPad),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: const Alignment(-0.5, -1.0),
+              end: const Alignment(0.5, 1.0),
+              colors: isDark
+                  ? [AppColors.darkPrimary, AppColors.darkPrimaryDeep]
+                  : [AppColors.primary, AppColors.primaryDeep],
+            ),
+            borderRadius: BorderRadius.circular(radius),
+            boxShadow: [
+              BoxShadow(
+                color: (isDark ? AppColors.darkPrimaryDeep : AppColors.primary)
+                    .withValues(alpha: 0.55),
+                offset: const Offset(0, 6),
+                blurRadius: 16,
+                spreadRadius: -7,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(emoji, style: TextStyle(fontSize: emojiSize)),
+              const SizedBox(height: 5),
+              Text(
+                value,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: valueFontSize,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 1),
+              Text(
+                label,
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 11,
+                  color: const Color(0xFFF3D9C8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: EdgeInsets.symmetric(vertical: vPad, horizontal: hPad),
         decoration: BoxDecoration(
-          color: AppColors.chipBg,
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? [AppColors.darkSurface, const Color(0xFF2E2623)]
+                : [Colors.white, const Color(0xFFFBF6F0)],
+          ),
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF78461E).withValues(alpha: 0.3),
+              offset: const Offset(0, 4),
+              blurRadius: 14,
+              spreadRadius: -8,
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: AppColors.primary),
-            const SizedBox(height: 4),
+            Text(emoji, style: TextStyle(fontSize: emojiSize)),
+            const SizedBox(height: 3),
             Text(
               value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: valueFontSize,
+                fontWeight: FontWeight.w800,
+                color: textColor,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               label,
-              style: const TextStyle(
+              style: GoogleFonts.notoSansSc(
                 fontSize: 11,
-                color: AppColors.warmBrown,
+                color: textMuted,
               ),
             ),
           ],
@@ -703,33 +1426,47 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ── Description Card ──────────────────────────────────────────────────────────
+// ── Quote Bar (description) ────────────────────────────────────────────────────
 
-class _DescriptionCard extends StatelessWidget {
-  final String description;
-  const _DescriptionCard({required this.description});
+class _QuoteBar extends StatelessWidget {
+  final String text;
+  const _QuoteBar({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? AppColors.darkMuted : AppColors.muted;
+    final accent = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final textColor = isDark
+        ? const Color(0xFFD9C7B8)
+        : const Color(0xFF5E4A3C);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(width: 3, color: AppColors.primary),
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
-              child: Container(
-                color: AppColors.chipBg,
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: Text(
-                  description,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                    fontStyle: FontStyle.italic,
-                    height: 1.5,
-                  ),
+              child: Text(
+                text,
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic,
+                  color: textColor,
                 ),
               ),
             ),
@@ -740,32 +1477,39 @@ class _DescriptionCard extends StatelessWidget {
   }
 }
 
-// ── Section label ─────────────────────────────────────────────────────────────
+// ── Section label ──────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;
   const _SectionLabel(this.text);
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: AppColors.warmBrown,
-            letterSpacing: 0.4,
-          ),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Text(
+      text,
+      style: GoogleFonts.notoSansSc(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+      ),
+    );
+  }
 }
 
-// ── Locations grouped card ────────────────────────────────────────────────────
+// ── Locations section (horizontal scroll) ─────────────────────────────────────
 
-class _LocationsCard extends StatelessWidget {
+const _kLocationGradients = [
+  [Color(0xFFD69A6E), Color(0xFFA8572F)],
+  [Color(0xFFCBB089), Color(0xFF9C7B4E)],
+  [Color(0xFF9FB07A), Color(0xFF5E7B3F)],
+  [Color(0xFFE8A765), Color(0xFFB65A28)],
+  [Color(0xFF9FB6C4), Color(0xFF5E7E92)],
+];
+
+class _LocationsSection extends StatelessWidget {
   final List<MemoryLocation> locations;
-  const _LocationsCard({required this.locations});
+  const _LocationsSection({required this.locations});
 
   Future<void> _openMaps(BuildContext context, String name) async {
     final uri = Uri.parse(
@@ -774,9 +1518,8 @@ class _LocationsCard extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('无法打开地图'),
-            behavior: SnackBarBehavior.floating,
-          ),
+              content: Text('无法打开地图'),
+              behavior: SnackBarBehavior.floating),
         );
       }
     }
@@ -784,60 +1527,206 @@ class _LocationsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.chipBg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: locations.asMap().entries.map((e) {
-          final loc = e.value;
-          final isLast = e.key == locations.length - 1;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 16, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        loc.name,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.map_outlined,
-                          size: 16, color: AppColors.warmBrown),
-                      padding: const EdgeInsets.all(6),
-                      constraints: const BoxConstraints(),
-                      tooltip: '在地图中查看',
-                      onPressed: () => _openMaps(context, loc.name),
-                    ),
-                  ],
+              Text(
+                '行程地点',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
                 ),
               ),
-              if (!isLast)
-                const Divider(
-                    height: 1,
-                    thickness: 0.5,
-                    indent: 38,
-                    color: Color(0xFFDDC9A8)),
+              const SizedBox(width: 8),
+              Text(
+                '· ${locations.length} 站',
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 12, color: textMuted),
+              ),
             ],
-          );
-        }).toList(),
+          ),
+        ),
+        SizedBox(
+          height: 160,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            itemCount: locations.length,
+            itemBuilder: (context, i) => Padding(
+              padding: EdgeInsets.only(
+                  right: i < locations.length - 1 ? 12 : 0),
+              child: _LocationCard(
+                location: locations[i],
+                index: i,
+                isDark: isDark,
+                onTap: () => _openMaps(context, locations[i].name),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocationCard extends StatelessWidget {
+  final MemoryLocation location;
+  final int index;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _LocationCard({
+    required this.location,
+    required this.index,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final grad = _kLocationGradients[index % _kLocationGradients.length];
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 152,
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF78461E).withValues(alpha: 0.4),
+              offset: const Offset(0, 6),
+              blurRadius: 16,
+              spreadRadius: -10,
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 92,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? [
+                          grad[0].withValues(alpha: 0.8),
+                          grad[1].withValues(alpha: 0.8)
+                        ]
+                      : grad,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 11,
+                    bottom: 9,
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.35)
+                            : Colors.white.withValues(alpha: 0.9),
+                      ),
+                      child: const Center(
+                        child: Text('📍',
+                            style: TextStyle(fontSize: 13)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    location.name,
+                    style: GoogleFonts.notoSansSc(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: textColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '第 ${index + 1} 站',
+                    style: GoogleFonts.notoSansSc(
+                        fontSize: 11.5, color: textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── Participant Picker Sheet ──────────────────────────────────────────────────
+// ── Avatar circle ──────────────────────────────────────────────────────────────
+
+class _AvatarCircle extends ConsumerWidget {
+  final String personId;
+  final double diameter;
+  final Color borderColor;
+  const _AvatarCircle({
+    required this.personId,
+    required this.diameter,
+    this.borderColor = AppColors.border,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final personAsync = ref.watch(personProvider(personId));
+    return Container(
+      width: diameter,
+      height: diameter,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: borderColor, width: 2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: personAsync.when(
+        loading: () => Container(color: AppColors.primaryTint),
+        error: (_, _) => const SizedBox(),
+        data: (person) => person == null
+            ? Container(color: AppColors.primaryTint)
+            : PersonAvatar(
+                name: person.name,
+                imagePath: person.avatarPath,
+                radius: diameter / 2,
+              ),
+      ),
+    );
+  }
+}
+
+// ── Participant Picker Sheet ───────────────────────────────────────────────────
 
 class _ParticipantPickerSheet extends ConsumerWidget {
   final String memoryId;
@@ -845,31 +1734,37 @@ class _ParticipantPickerSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
+    final border = isDark ? AppColors.darkBorder : AppColors.border;
+
     final personsAsync = ref.watch(personsProvider);
     final selfAsync = ref.watch(selfPersonStreamProvider);
-    final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
+    final participantsAsync =
+        ref.watch(memoryParticipantsProvider(memoryId));
     final notifier = ref.read(memoryNotifierProvider.notifier);
 
-    final currentIds = participantsAsync.value?.map((p) => p.personId).toSet() ?? {};
+    final currentIds =
+        participantsAsync.value?.map((p) => p.personId).toSet() ?? {};
 
     return DraggableScrollableSheet(
       initialChildSize: 0.55,
       minChildSize: 0.35,
       maxChildSize: 0.85,
       builder: (ctx, scrollCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           children: [
-            // Handle
             Container(
               margin: const EdgeInsets.only(top: 10, bottom: 6),
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.warmBeige,
+                color: border,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -913,12 +1808,14 @@ class _ParticipantPickerSheet extends ConsumerWidget {
                           radius: 18,
                         ),
                         title: Text(person.name),
-                        subtitle: person.isSelf ? const Text('（我）') : null,
+                        subtitle: person.isSelf
+                            ? const Text('（我）')
+                            : null,
                         trailing: selected
                             ? const Icon(Icons.check_circle,
                                 color: AppColors.primary)
                             : const Icon(Icons.radio_button_unchecked,
-                                color: AppColors.warmBrown),
+                                color: AppColors.textMuted),
                         onTap: () async {
                           if (selected) {
                             await notifier.removeParticipant(
@@ -941,11 +1838,12 @@ class _ParticipantPickerSheet extends ConsumerWidget {
   }
 }
 
-// ── Itinerary Tab ─────────────────────────────────────────────────────────────
+// ── Itinerary Tab ──────────────────────────────────────────────────────────────
 
 class _ItineraryTab extends ConsumerStatefulWidget {
   final String memoryId;
-  const _ItineraryTab({required this.memoryId});
+  final Memory memory;
+  const _ItineraryTab({required this.memoryId, required this.memory});
 
   @override
   ConsumerState<_ItineraryTab> createState() => _ItineraryTabState();
@@ -1099,14 +1997,15 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
       key: Key('it_${item.id}'),
       direction: DismissDirection.startToEnd,
       background: Container(
-        margin: const EdgeInsets.only(bottom: 4),
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(18),
         ),
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
-        child: const Icon(Icons.delete_outline, color: Colors.white, size: 24),
+        child:
+            const Icon(Icons.delete_outline, color: Colors.white, size: 24),
       ),
       confirmDismiss: (_) => _confirmDelete(context),
       onDismissed: (_) async {
@@ -1142,7 +2041,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
 
   Widget _buildFlatList(List<ItineraryItem> items) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       itemCount: items.length,
       itemBuilder: (context, i) => _buildDismissible(items[i]),
     );
@@ -1158,7 +2057,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
     final sortedKeys = grouped.keys.toList()..sort();
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       itemCount: sortedKeys.length,
       itemBuilder: (context, i) {
         final dateItems = grouped[sortedKeys[i]]!;
@@ -1176,41 +2075,58 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final itineraryAsync = ref.watch(itineraryProvider(widget.memoryId));
     final isEditing = _editingItem != null;
+
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final primaryDeep =
+        isDark ? AppColors.darkPrimaryDeep : AppColors.primaryDeep;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final bg = isDark ? AppColors.darkBackground : AppColors.background;
+    final border = isDark ? AppColors.darkBorder : AppColors.border;
+    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
 
     return Column(
       children: [
         Expanded(
           child: itineraryAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text(l10n.errorWith('$e'))),
+            loading: () =>
+                const Center(child: CircularProgressIndicator()),
+            error: (e, _) =>
+                Center(child: Text(l10n.errorWith('$e'))),
             data: (items) {
               if (items.isEmpty) {
                 return Center(child: Text(l10n.memoryNoItinerary));
               }
               return Column(
                 children: [
+                  // Single view-toggle button
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+                    padding:
+                        const EdgeInsets.fromLTRB(16, 10, 16, 4),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        TextButton.icon(
-                          icon: Icon(
-                            _groupByDate
-                                ? Icons.view_list_outlined
-                                : Icons.view_agenda_outlined,
-                            size: 18,
+                        GestureDetector(
+                          onTap: () => setState(
+                              () => _groupByDate = !_groupByDate),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: primary,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              _groupByDate ? '≡ 列表' : '日 按日期分组',
+                              style: GoogleFonts.notoSansSc(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
-                          label: Text(
-                            _groupByDate
-                                ? l10n.memoryListView
-                                : l10n.memoryGroupByDate,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () =>
-                              setState(() => _groupByDate = !_groupByDate),
                         ),
                       ],
                     ),
@@ -1225,17 +2141,16 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
             },
           ),
         ),
-        // ── Bottom form (add / edit) ────────────────────────────────────────
+        // Bottom add / edit form
         Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
           decoration: BoxDecoration(
             color: isEditing
-                ? AppColors.primary.withValues(alpha: 0.04)
-                : AppColors.cardBg,
+                ? primary.withValues(alpha: 0.04)
+                : bg,
             border: Border(
               top: BorderSide(
-                color:
-                    isEditing ? AppColors.primary : AppColors.warmBeige,
+                color: isEditing ? primary : border,
                 width: isEditing ? 1.5 : 1,
               ),
             ),
@@ -1250,71 +2165,159 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
                     isEditing
                         ? l10n.memoryEditItinerary
                         : l10n.memoryAddItinerary,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: isEditing ? AppColors.primary : null,
-                        ),
+                    style: GoogleFonts.notoSansSc(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: isEditing ? primary : textColor,
+                    ),
                   ),
                   if (isEditing) ...[
                     const Spacer(),
-                    TextButton(
-                      onPressed: _cancelEdit,
-                      child: Text(l10n.cancel),
+                    GestureDetector(
+                      onTap: _cancelEdit,
+                      child: Text(
+                        l10n.cancel,
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 13, color: primary),
+                      ),
                     ),
                   ],
                 ],
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _titleCtrl,
-                decoration: InputDecoration(
-                    hintText: l10n.memoryActivityHint, isDense: true),
+              const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 15, vertical: 13),
+                child: TextField(
+                  controller: _titleCtrl,
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 14, color: textColor),
+                  decoration: InputDecoration.collapsed(
+                    hintText: l10n.memoryActivityHint,
+                    hintStyle: GoogleFonts.notoSansSc(
+                        fontSize: 14,
+                        color: isDark
+                            ? AppColors.darkTextMuted
+                            : const Color(0xFFB3A797)),
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                    onPressed: () async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: _itemDate ?? DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (d != null) setState(() => _itemDate = d);
-                    },
-                    label: Text(_itemDate == null
-                        ? l10n.memoryDateLabel
-                        : '${_itemDate!.day}/${_itemDate!.month}'),
+              const SizedBox(height: 11),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final memory = widget.memory;
+                        final firstDate = memory.startDate;
+                        final lastDate =
+                            memory.endDate ?? memory.startDate;
+                        final defaultDate =
+                            _itemDate ?? memory.startDate;
+                        final clamped =
+                            defaultDate.isBefore(firstDate)
+                                ? firstDate
+                                : defaultDate.isAfter(lastDate)
+                                    ? lastDate
+                                    : defaultDate;
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: clamped,
+                          firstDate: firstDate,
+                          lastDate: lastDate,
+                        );
+                        if (d != null) setState(() => _itemDate = d);
+                      },
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: primary, width: 1.5),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _itemDate == null
+                                ? '📅 ${l10n.memoryDateLabel}'
+                                : '📅 ${_itemDate!.day}/${_itemDate!.month}',
+                            style: GoogleFonts.notoSansSc(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.access_time_outlined, size: 16),
-                    onPressed: () async {
-                      final t = await showTimePicker(
-                        context: context,
-                        initialTime: _itemTime ?? TimeOfDay.now(),
-                      );
-                      if (t != null) setState(() => _itemTime = t);
-                    },
-                    label: Text(_itemTime == null
-                        ? l10n.memoryTimeLabel
-                        : _itemTime!.format(context)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final t = await showTimePicker(
+                          context: context,
+                          initialTime: _itemTime ?? TimeOfDay.now(),
+                        );
+                        if (t != null) setState(() => _itemTime = t);
+                      },
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: primary, width: 1.5),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _itemTime == null
+                                ? '🕘 ${l10n.memoryTimeLabel}'
+                                : '🕘 ${_itemTime!.format(context)}',
+                            style: GoogleFonts.notoSansSc(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: Icon(
-                    isEditing ? Icons.check_circle_outline : Icons.add_circle_outline,
-                    color: AppColors.primary,
-                    size: 28,
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: _saveOrUpdate,
+                    child: Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: primary,
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                primaryDeep.withValues(alpha: 0.5),
+                            offset: const Offset(0, 6),
+                            blurRadius: 16,
+                            spreadRadius: -6,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Icon(
+                          isEditing
+                              ? Icons.check_rounded
+                              : Icons.add_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
                   ),
-                  tooltip: isEditing ? l10n.save : l10n.add,
-                  onPressed: _saveOrUpdate,
-                ),
-              ]),
+                ],
+              ),
             ],
           ),
         ),
@@ -1323,7 +2326,9 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
   }
 }
 
-// ── Itinerary card (flat list) ────────────────────────────────────────────────
+
+
+// ── Itinerary card ─────────────────────────────────────────────────────────────
 
 class _ItineraryCard extends StatelessWidget {
   final ItineraryItem item;
@@ -1337,59 +2342,76 @@ class _ItineraryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final textMuted =
+        isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final dividerColor = isDark ? AppColors.darkBorder : AppColors.border;
     final l10n = context.l10n;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      color: isEditing
-          ? AppColors.primary.withValues(alpha: 0.06)
-          : AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: isEditing
-            ? const BorderSide(color: AppColors.primary, width: 1.5)
-            : const BorderSide(color: Color(0xFFEDD3A8), width: 0.5),
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isEditing ? primary.withValues(alpha: 0.06) : surface,
+        borderRadius: BorderRadius.circular(14),
+        border: isEditing
+            ? Border.all(color: primary, width: 1.5)
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF78461E).withValues(alpha: 0.28),
+            offset: const Offset(0, 3),
+            blurRadius: 10,
+            spreadRadius: -8,
+          ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Date + time column
             SizedBox(
-              width: 48,
+              width: 46,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     l10n.formatMonthDay(item.itemDate),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.clip,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
+                    style: GoogleFonts.notoSansSc(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: primary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    softWrap: false,
                   ),
                   if (item.itemTime != null)
                     Text(
                       item.itemTime!,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.clip,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.warmBrown,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: textMuted,
                       ),
                     ),
                 ],
               ),
             ),
-            Container(width: 1, height: 22, color: AppColors.warmBeige),
             const SizedBox(width: 10),
-            // Title + optional location
+            Container(
+              width: 1.5,
+              height: item.itemTime != null ? 30 : 18,
+              decoration: BoxDecoration(
+                color: dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1397,9 +2419,10 @@ class _ItineraryCard extends StatelessWidget {
                 children: [
                   Text(
                     item.title,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textPrimary,
+                    style: GoogleFonts.notoSansSc(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isEditing ? primary : textColor,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -1407,26 +2430,28 @@ class _ItineraryCard extends StatelessWidget {
                   if (item.locationName != null)
                     Text(
                       '📍 ${item.locationName}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.warmBrown,
-                      ),
+                      style: GoogleFonts.notoSansSc(
+                          fontSize: 10, color: textMuted),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),
             ),
-            // Edit button
-            IconButton(
-              icon: Icon(
-                Icons.edit_outlined,
-                size: 14,
-                color: isEditing ? AppColors.primary : AppColors.warmBrown,
+            GestureDetector(
+              onTap: onEdit,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Text(
+                  '✎',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isEditing
+                        ? primary
+                        : const Color(0xFFCDBFAE),
+                  ),
+                ),
               ),
-              padding: const EdgeInsets.all(5),
-              constraints: const BoxConstraints(),
-              onPressed: onEdit,
             ),
           ],
         ),
@@ -1435,7 +2460,7 @@ class _ItineraryCard extends StatelessWidget {
   }
 }
 
-// ── Date group card (grouped list) ────────────────────────────────────────────
+// ── Date group card (timeline / grouped view) ─────────────────────────────────
 
 class _DateGroup extends StatelessWidget {
   final DateTime date;
@@ -1454,38 +2479,50 @@ class _DateGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
+    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final textMuted =
+        isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final divider = isDark ? AppColors.darkBorder : const Color(0xFFF0E8DC);
     final l10n = context.l10n;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Compact date header
           Padding(
-            padding: const EdgeInsets.only(bottom: 6, left: 4),
+            padding: const EdgeInsets.only(bottom: 8, left: 4),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.calendar_today_outlined,
-                    size: 11, color: AppColors.primary),
-                const SizedBox(width: 5),
+                const Text('📅', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 6),
                 Text(
                   l10n.formatMonthDay(date),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: textColor,
                   ),
                 ),
               ],
             ),
           ),
-          // Events card with timeline
           Container(
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFEDD3A8), width: 0.5),
+              color: surface,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF78461E).withValues(alpha: 0.28),
+                  offset: const Offset(0, 3),
+                  blurRadius: 10,
+                  spreadRadius: -8,
+                ),
+              ],
             ),
             child: Column(
               children: items.asMap().entries.map((e) {
@@ -1493,147 +2530,103 @@ class _DateGroup extends StatelessWidget {
                 final isLast = e.key == items.length - 1;
                 final isEditingThis = editingItemId == item.id;
 
-                return IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Timeline column: dot + vertical line
-                      SizedBox(
-                        width: 28,
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 12),
-                            Center(
-                              child: Container(
-                                width: 7,
-                                height: 7,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.primary,
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: primary,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          if (item.itemTime != null)
+                            SizedBox(
+                              width: 42,
+                              child: Text(
+                                item.itemTime!,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isEditingThis
+                                      ? primary
+                                      : textMuted,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                softWrap: false,
+                              ),
+                            )
+                          else
+                            const SizedBox(width: 6),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.title,
+                                  style: GoogleFonts.notoSansSc(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isEditingThis
+                                        ? primary
+                                        : textColor,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (item.locationName != null)
+                                  Text(
+                                    '📍 ${item.locationName}',
+                                    style: GoogleFonts.notoSansSc(
+                                        fontSize: 10,
+                                        color: textMuted),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => onEdit(item),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Text(
+                                '✎',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: isEditingThis
+                                      ? primary
+                                      : const Color(0xFFCDBFAE),
                                 ),
                               ),
                             ),
-                            if (!isLast)
-                              Expanded(
-                                child: Center(
-                                  child: Container(
-                                    width: 1.5,
-                                    color: AppColors.warmBeige,
-                                  ),
-                                ),
-                              )
-                            else
-                              const SizedBox(height: 8),
-                          ],
-                        ),
-                      ),
-                      // Event content
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              color: isEditingThis
-                                  ? AppColors.primary.withValues(alpha: 0.05)
-                                  : null,
-                              padding:
-                                  const EdgeInsets.fromLTRB(2, 5, 4, 5),
-                              child: Row(
-                                children: [
-                                  // Time label — fixed width prevents wrap
-                                  if (item.itemTime != null) ...[
-                                    SizedBox(
-                                      width: 38,
-                                      child: Text(
-                                        item.itemTime!,
-                                        maxLines: 1,
-                                        softWrap: false,
-                                        overflow: TextOverflow.clip,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: isEditingThis
-                                              ? AppColors.primary
-                                              : AppColors.warmBrown,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                  ] else
-                                    const SizedBox(width: 8),
-                                  // Title + optional location
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          item.title,
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: isEditingThis
-                                                ? AppColors.primary
-                                                : AppColors.textPrimary,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        if (item.locationName != null)
-                                          Text(
-                                            '📍 ${item.locationName}',
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              color: AppColors.warmBrown,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Action buttons — visually small, tap target padded
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.edit_outlined,
-                                          size: 14,
-                                          color: isEditingThis
-                                              ? AppColors.primary
-                                              : AppColors.warmBrown,
-                                        ),
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => onEdit(item),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.delete_outline,
-                                          size: 14,
-                                          color: Colors.red.shade400,
-                                        ),
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => onDelete(item),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                          ),
+                          const SizedBox(width: 2),
+                          GestureDetector(
+                            onTap: () => onDelete(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Text(
+                                '🗑',
+                                style: TextStyle(fontSize: 13),
                               ),
                             ),
-                            if (!isLast)
-                              const Divider(
-                                height: 1,
-                                thickness: 0.5,
-                                color: Color(0xFFEDD3A8),
-                              ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    if (!isLast)
+                      Divider(height: 1, thickness: 1, color: divider),
+                  ],
                 );
               }).toList(),
             ),
@@ -1644,7 +2637,7 @@ class _DateGroup extends StatelessWidget {
   }
 }
 
-// ── Gallery Tab ───────────────────────────────────────────────────────────────
+// ── Gallery Tab ────────────────────────────────────────────────────────────────
 
 class _GalleryTab extends ConsumerWidget {
   final String memoryId;
@@ -1652,6 +2645,7 @@ class _GalleryTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = context.l10n;
     final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
 
@@ -1664,23 +2658,23 @@ class _GalleryTab extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.photo_library_outlined,
-                      size: 56, color: AppColors.warmBeige),
+                      size: 56,
+                      color: isDark
+                          ? AppColors.darkTextMuted
+                          : AppColors.textMuted),
                   const SizedBox(height: 12),
                   Text(l10n.memoryNoPhotos,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: AppColors.textSecondary)),
+                      style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
             )
           : GridView.builder(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 88),
               gridDelegate:
                   const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
-                crossAxisSpacing: 4,
-                mainAxisSpacing: 4,
+                crossAxisSpacing: 7,
+                mainAxisSpacing: 7,
               ),
               itemCount: assets.length,
               itemBuilder: (context, i) =>
@@ -1689,6 +2683,8 @@ class _GalleryTab extends ConsumerWidget {
     );
   }
 }
+
+// ── Media tile ────────────────────────────────────────────────────────────────
 
 class _MediaTile extends ConsumerStatefulWidget {
   final MediaAsset asset;
@@ -1738,13 +2734,15 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = context.l10n;
     final isVideo = widget.asset.type == 'video';
     return GestureDetector(
       onTap: () {
         final allAssets =
             ref.read(mediaAssetsProvider(widget.memoryId)).value ?? [];
-        final idx = allAssets.indexWhere((a) => a.id == widget.asset.id);
+        final idx =
+            allAssets.indexWhere((a) => a.id == widget.asset.id);
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => _PhotoViewerScreen(
             assets: allAssets,
@@ -1795,8 +2793,8 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.warmBeige,
-          borderRadius: BorderRadius.circular(8),
+          color: isDark ? AppColors.darkMuted : AppColors.primaryTint,
+          borderRadius: BorderRadius.circular(12),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -1807,13 +2805,26 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
             else if (isVideo)
               Container(color: Colors.black54)
             else
-              const Center(
-                child: Icon(Icons.image_outlined, color: AppColors.warmBrown),
+              Center(
+                child: Icon(Icons.image_outlined,
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.textMuted),
               ),
             if (isVideo)
-              const Center(
-                child: Icon(Icons.play_circle_outline,
-                    color: Colors.white, size: 40),
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.play_arrow_rounded,
+                        color: AppColors.primaryDeep, size: 24),
+                  ),
+                ),
               ),
           ],
         ),
@@ -1822,14 +2833,16 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
   }
 }
 
-// ── Expenses Tab ──────────────────────────────────────────────────────────────
+// ── Expenses Tab ───────────────────────────────────────────────────────────────
 
 class _ExpensesTab extends ConsumerWidget {
   final String memoryId;
-  const _ExpensesTab({required this.memoryId});
+  final double? budget;
+  const _ExpensesTab({required this.memoryId, this.budget});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = context.l10n;
     final txAsync = ref.watch(transactionsByMemoryProvider(memoryId));
     final catAsync = ref.watch(categoriesProvider(null));
@@ -1845,7 +2858,9 @@ class _ExpensesTab extends ConsumerWidget {
               children: [
                 Icon(Icons.receipt_long_outlined,
                     size: 48,
-                    color: AppColors.warmBrown.withValues(alpha: 0.3)),
+                    color: isDark
+                        ? AppColors.darkTextMuted
+                        : AppColors.textMuted),
                 const SizedBox(height: 12),
                 Text(l10n.memoryNoExpenses),
                 const SizedBox(height: 8),
@@ -1859,65 +2874,219 @@ class _ExpensesTab extends ConsumerWidget {
             ),
           );
         }
+
         final catMap = {
           for (final c in catAsync.value ?? <Category>[]) c.id: c
         };
-        double total = 0;
+        double spent = 0;
         for (final t in txns) {
-          total += t.type == 'expense' ? -t.amount : t.amount;
+          if (t.type == 'expense') spent += t.amount;
         }
-        final sym = txns.isNotEmpty
-            ? (const {'MYR': 'RM', 'SGD': 'S\$'}[txns.first.currencyCode] ??
-                txns.first.currencyCode)
-            : 'RM';
+        final sym = _currencySym(txns);
+        final hasBudget = budget != null && budget! > 0;
+        final remaining = hasBudget ? budget! - spent : 0.0;
+        final progress =
+            hasBudget ? (spent / budget!).clamp(0.0, 1.0) : 0.0;
+
         return Column(
           children: [
+            // Gradient summary card
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 10),
-              color: AppColors.warmBrown.withValues(alpha: 0.08),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(l10n.memoryExpenseCount(txns.length),
-                      style: const TextStyle(
-                          color: AppColors.warmBrown)),
-                  Text(
-                    l10n.memoryExpenseTotal(sym, total.abs().toStringAsFixed(2)),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: total >= 0
-                          ? AppColors.income
-                          : AppColors.expense,
-                    ),
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: const Alignment(-0.5, -1.0),
+                  end: const Alignment(0.5, 1.0),
+                  colors: isDark
+                      ? [AppColors.darkPrimary, AppColors.darkPrimaryDeep]
+                      : [AppColors.primary, AppColors.primaryDeep],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryDeep.withValues(alpha: 0.6),
+                    offset: const Offset(0, 10),
+                    blurRadius: 24,
+                    spreadRadius: -12,
                   ),
                 ],
               ),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.memoryExpenseCount(txns.length),
+                              style: GoogleFonts.notoSansSc(
+                                fontSize: 12,
+                                color: const Color(0xFFF3D9C8),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatAmt(spent, sym),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hasBudget)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '预算 ${_formatAmt(budget!, sym)}',
+                              style: GoogleFonts.notoSansSc(
+                                fontSize: 12,
+                                color: const Color(0xFFF3D9C8),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '剩 ${_formatAmt(remaining, sym)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                  if (hasBudget) ...[
+                    const SizedBox(height: 13),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 7,
+                        backgroundColor:
+                            Colors.white.withValues(alpha: 0.25),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFF7F2EA)),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
+
+            // Expense list
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
                 itemCount: txns.length,
                 itemBuilder: (context, i) {
                   final tx = txns[i];
                   final cat = catMap[tx.categoryId];
                   final isExp = tx.type == 'expense';
-                  return Card(
-                    child: ListTile(
-                      leading: Text(
-                        cat?.iconName ?? '•',
-                        style: const TextStyle(fontSize: 24),
+                  final surface =
+                      isDark ? AppColors.darkSurface : AppColors.surface;
+                  final textColor =
+                      isDark ? AppColors.darkText : AppColors.text;
+                  final textMuted = isDark
+                      ? AppColors.darkTextMuted
+                      : AppColors.textMuted;
+                  final iconBg =
+                      isDark ? AppColors.darkMuted : AppColors.muted;
+                  final amtBg = isDark
+                      ? AppColors.darkPrimaryTint
+                      : const Color(0xFFF5E3DA);
+                  final amtColor =
+                      isDark ? AppColors.darkPrimary : AppColors.primary;
+
+                  return GestureDetector(
+                    onTap: () =>
+                        context.push('/expenses/${tx.id}/edit'),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: surface,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF78461E)
+                                .withValues(alpha: 0.35),
+                            offset: const Offset(0, 4),
+                            blurRadius: 14,
+                            spreadRadius: -9,
+                          ),
+                        ],
                       ),
-                      title: Text(cat?.name ?? tx.categoryId),
-                      subtitle:
-                          Text(l10n.formatMonthDay(tx.txnDate)),
-                      trailing: MoneyChip(
-                        amount: tx.amount,
-                        currency: tx.currencyCode,
-                        isExpense: isExp,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: iconBg,
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Center(
+                              child: Text(
+                                cat?.iconName ?? '💰',
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 13),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  cat?.name ?? tx.categoryId,
+                                  style: GoogleFonts.notoSansSc(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: textColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  l10n.formatMonthDay(tx.txnDate),
+                                  style: GoogleFonts.notoSansSc(
+                                    fontSize: 12.5,
+                                    color: textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 13, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: amtBg,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${isExp ? '−' : '+'}${_formatAmt(tx.amount, sym)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: isExp
+                                    ? amtColor
+                                    : (isDark ? AppColors.darkSuccess : AppColors.success),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      onTap: () =>
-                          context.push('/expenses/${tx.id}/edit'),
                     ),
                   );
                 },
@@ -1930,7 +3099,7 @@ class _ExpensesTab extends ConsumerWidget {
   }
 }
 
-// ── Photo Viewer ──────────────────────────────────────────────────────────────
+// ── Photo Viewer ───────────────────────────────────────────────────────────────
 
 class _PhotoViewerScreen extends StatefulWidget {
   final List<MediaAsset> assets;
@@ -1990,7 +3159,8 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
     final clamped =
         offset.clamp(0.0, _thumbCtrl.position.maxScrollExtent);
     _thumbCtrl.animateTo(clamped,
-        duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut);
   }
 
   @override
@@ -2044,7 +3214,7 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
   }
 }
 
-// ── Single zoomable photo page ────────────────────────────────────────────────
+// ── Single zoomable photo page ─────────────────────────────────────────────────
 
 class _ZoomablePage extends StatefulWidget {
   final MediaAsset asset;
@@ -2086,7 +3256,7 @@ class _ZoomablePageState extends State<_ZoomablePage> {
   }
 
   Future<void> _loadBytes() async {
-    if (widget.asset.type == 'video') return; // no image decoding for video
+    if (widget.asset.type == 'video') return;
     final path = widget.asset.filePath;
     if (path.startsWith('data:')) {
       final comma = path.indexOf(',');
@@ -2108,7 +3278,6 @@ class _ZoomablePageState extends State<_ZoomablePage> {
     } else {
       const scale = 2.5;
       final pos = _doubleTapDetails?.localPosition ?? Offset.zero;
-      // Zoom to the tapped point: keep that point fixed on screen.
       final tx = pos.dx * (1 - scale);
       final ty = pos.dy * (1 - scale);
       _ctrl.value = Matrix4.translationValues(tx, ty, 0) *
@@ -2139,7 +3308,7 @@ class _ZoomablePageState extends State<_ZoomablePage> {
   }
 }
 
-// ── Video player page ─────────────────────────────────────────────────────────
+// ── Video player page ──────────────────────────────────────────────────────────
 
 class _VideoPlayerPage extends StatefulWidget {
   final MediaAsset asset;
@@ -2205,8 +3374,8 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
       context,
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) =>
-            _FullscreenVideoPage(asset: widget.asset, startPosition: pos),
+        builder: (_) => _FullscreenVideoPage(
+            asset: widget.asset, startPosition: pos),
       ),
     );
     if (mounted && _initialized) _ctrl?.play();
@@ -2221,14 +3390,16 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
           children: [
             Icon(Icons.error_outline, color: Colors.white54, size: 48),
             SizedBox(height: 8),
-            Text('无法播放视频', style: TextStyle(color: Colors.white54)),
+            Text('无法播放视频',
+                style: TextStyle(color: Colors.white54)),
           ],
         ),
       );
     }
     if (!_initialized || _ctrl == null) {
       return const Center(
-        child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2),
+        child: CircularProgressIndicator(
+            color: Colors.white54, strokeWidth: 2),
       );
     }
     final isPlaying = _ctrl!.value.isPlaying;
@@ -2252,7 +3423,9 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
                       color: Colors.white, size: 44),
                 ),
               Positioned(
-                bottom: 0, left: 0, right: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -2265,7 +3438,8 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
                           bufferedColor: Colors.white38,
                           backgroundColor: Colors.white12,
                         ),
-                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 6),
                       ),
                     ),
                     GestureDetector(
@@ -2287,7 +3461,7 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
   }
 }
 
-// ── Fullscreen video page ─────────────────────────────────────────────────────
+// ── Fullscreen video page ──────────────────────────────────────────────────────
 
 class _FullscreenVideoPage extends StatefulWidget {
   final MediaAsset asset;
@@ -2296,7 +3470,8 @@ class _FullscreenVideoPage extends StatefulWidget {
       {required this.asset, required this.startPosition});
 
   @override
-  State<_FullscreenVideoPage> createState() => _FullscreenVideoPageState();
+  State<_FullscreenVideoPage> createState() =>
+      _FullscreenVideoPageState();
 }
 
 class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
@@ -2307,8 +3482,6 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
   @override
   void initState() {
     super.initState();
-    // Unlock all orientations so portrait videos default to portrait
-    // and the user can rotate to landscape freely.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _initPlayer();
@@ -2349,8 +3522,6 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    // Explicitly restore both status bar and nav bar — edgeToEdge alone
-    // leaves the nav bar hidden, making the whole app appear fullscreen.
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
@@ -2369,7 +3540,8 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
       backgroundColor: Colors.black,
       body: _hasError
           ? const Center(
-              child: Icon(Icons.error_outline, color: Colors.white54, size: 48))
+              child: Icon(Icons.error_outline,
+                  color: Colors.white54, size: 48))
           : !_initialized || _ctrl == null
               ? const Center(
                   child: CircularProgressIndicator(
@@ -2398,21 +3570,26 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                           ),
                         ),
                       Positioned(
-                        top: 0, left: 0, right: 0,
+                        top: 0,
+                        left: 0,
+                        right: 0,
                         child: SafeArea(
                           child: Row(
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.fullscreen_exit,
                                     color: Colors.white),
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () =>
+                                    Navigator.pop(context),
                               ),
                             ],
                           ),
                         ),
                       ),
                       Positioned(
-                        bottom: 0, left: 0, right: 0,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
                         child: SafeArea(
                           child: VideoProgressIndicator(
                             _ctrl!,
@@ -2422,7 +3599,8 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                               bufferedColor: Colors.white38,
                               backgroundColor: Colors.white12,
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 8),
                           ),
                         ),
                       ),
@@ -2433,7 +3611,7 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
   }
 }
 
-// ── Thumbnail scrubber strip ──────────────────────────────────────────────────
+// ── Thumbnail scrubber strip ───────────────────────────────────────────────────
 
 class _ThumbnailStrip extends StatelessWidget {
   final List<MediaAsset> assets;
@@ -2452,11 +3630,13 @@ class _ThumbnailStrip extends StatelessWidget {
   });
 
   int _indexAt(double localX) {
-    final offset =
-        scrollController.hasClients ? scrollController.offset : 0.0;
-    // 8px leading padding, then each slot = _thumbW + _thumbGap
+    final offset = scrollController.hasClients
+        ? scrollController.offset
+        : 0.0;
     final x = localX + offset - 8.0;
-    return (x / (_thumbW + _thumbGap)).floor().clamp(0, assets.length - 1);
+    return (x / (_thumbW + _thumbGap))
+        .floor()
+        .clamp(0, assets.length - 1);
   }
 
   @override
@@ -2465,9 +3645,7 @@ class _ThumbnailStrip extends StatelessWidget {
         height: 88,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          // Tap to jump to a specific thumbnail.
           onTapUp: (d) => onIndexChanged(_indexAt(d.localPosition.dx)),
-          // Hold 1 s → haptic → drag to scrub photos (does not block normal scroll).
           onLongPressStart: (d) {
             HapticFeedback.mediumImpact();
             onIndexChanged(_indexAt(d.localPosition.dx));
@@ -2477,8 +3655,8 @@ class _ThumbnailStrip extends StatelessWidget {
           child: ListView.builder(
             controller: scrollController,
             scrollDirection: Axis.horizontal,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 8, vertical: 12),
             itemCount: assets.length,
             itemExtent: _thumbW + _thumbGap,
             itemBuilder: (_, i) => _ThumbnailItem(
@@ -2514,7 +3692,8 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
       if (widget.asset.type != 'video') {
         final comma = path.indexOf(',');
         if (comma != -1 && mounted) {
-          setState(() => _bytes = base64Decode(path.substring(comma + 1)));
+          setState(() =>
+              _bytes = base64Decode(path.substring(comma + 1)));
         }
       }
       return;
@@ -2544,7 +3723,9 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: widget.selected ? Colors.white : Colors.transparent,
+              color: widget.selected
+                  ? Colors.white
+                  : Colors.transparent,
               width: 2,
             ),
           ),

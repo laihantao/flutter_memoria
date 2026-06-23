@@ -3863,6 +3863,15 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _budgetMeta = const VerificationMeta('budget');
+  @override
+  late final GeneratedColumn<double> budget = GeneratedColumn<double>(
+    'budget',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -3897,6 +3906,7 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
     startDate,
     endDate,
     locationName,
+    budget,
     createdAt,
     updatedAt,
   ];
@@ -3974,6 +3984,12 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
         ),
       );
     }
+    if (data.containsKey('budget')) {
+      context.handle(
+        _budgetMeta,
+        budget.isAcceptableOrUnknown(data['budget']!, _budgetMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4027,6 +4043,10 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
         DriftSqlType.string,
         data['${effectivePrefix}location_name'],
       ),
+      budget: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}budget'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -4053,6 +4073,7 @@ class Memory extends DataClass implements Insertable<Memory> {
   final DateTime startDate;
   final DateTime? endDate;
   final String? locationName;
+  final double? budget;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Memory({
@@ -4064,6 +4085,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     required this.startDate,
     this.endDate,
     this.locationName,
+    this.budget,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -4085,6 +4107,9 @@ class Memory extends DataClass implements Insertable<Memory> {
     }
     if (!nullToAbsent || locationName != null) {
       map['location_name'] = Variable<String>(locationName);
+    }
+    if (!nullToAbsent || budget != null) {
+      map['budget'] = Variable<double>(budget);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -4109,6 +4134,9 @@ class Memory extends DataClass implements Insertable<Memory> {
       locationName: locationName == null && nullToAbsent
           ? const Value.absent()
           : Value(locationName),
+      budget: budget == null && nullToAbsent
+          ? const Value.absent()
+          : Value(budget),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -4128,6 +4156,7 @@ class Memory extends DataClass implements Insertable<Memory> {
       startDate: serializer.fromJson<DateTime>(json['startDate']),
       endDate: serializer.fromJson<DateTime?>(json['endDate']),
       locationName: serializer.fromJson<String?>(json['locationName']),
+      budget: serializer.fromJson<double?>(json['budget']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -4144,6 +4173,7 @@ class Memory extends DataClass implements Insertable<Memory> {
       'startDate': serializer.toJson<DateTime>(startDate),
       'endDate': serializer.toJson<DateTime?>(endDate),
       'locationName': serializer.toJson<String?>(locationName),
+      'budget': serializer.toJson<double?>(budget),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -4158,6 +4188,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     DateTime? startDate,
     Value<DateTime?> endDate = const Value.absent(),
     Value<String?> locationName = const Value.absent(),
+    Value<double?> budget = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Memory(
@@ -4171,6 +4202,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     startDate: startDate ?? this.startDate,
     endDate: endDate.present ? endDate.value : this.endDate,
     locationName: locationName.present ? locationName.value : this.locationName,
+    budget: budget.present ? budget.value : this.budget,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -4190,6 +4222,7 @@ class Memory extends DataClass implements Insertable<Memory> {
       locationName: data.locationName.present
           ? data.locationName.value
           : this.locationName,
+      budget: data.budget.present ? data.budget.value : this.budget,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -4206,6 +4239,7 @@ class Memory extends DataClass implements Insertable<Memory> {
           ..write('startDate: $startDate, ')
           ..write('endDate: $endDate, ')
           ..write('locationName: $locationName, ')
+          ..write('budget: $budget, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -4222,6 +4256,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     startDate,
     endDate,
     locationName,
+    budget,
     createdAt,
     updatedAt,
   );
@@ -4237,6 +4272,7 @@ class Memory extends DataClass implements Insertable<Memory> {
           other.startDate == this.startDate &&
           other.endDate == this.endDate &&
           other.locationName == this.locationName &&
+          other.budget == this.budget &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -4250,6 +4286,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
   final Value<DateTime> startDate;
   final Value<DateTime?> endDate;
   final Value<String?> locationName;
+  final Value<double?> budget;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -4262,6 +4299,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     this.startDate = const Value.absent(),
     this.endDate = const Value.absent(),
     this.locationName = const Value.absent(),
+    this.budget = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4275,6 +4313,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     required DateTime startDate,
     this.endDate = const Value.absent(),
     this.locationName = const Value.absent(),
+    this.budget = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4291,6 +4330,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     Expression<DateTime>? startDate,
     Expression<DateTime>? endDate,
     Expression<String>? locationName,
+    Expression<double>? budget,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -4304,6 +4344,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
       if (startDate != null) 'start_date': startDate,
       if (endDate != null) 'end_date': endDate,
       if (locationName != null) 'location_name': locationName,
+      if (budget != null) 'budget': budget,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -4319,6 +4360,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     Value<DateTime>? startDate,
     Value<DateTime?>? endDate,
     Value<String?>? locationName,
+    Value<double?>? budget,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -4332,6 +4374,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       locationName: locationName ?? this.locationName,
+      budget: budget ?? this.budget,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -4365,6 +4408,9 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     if (locationName.present) {
       map['location_name'] = Variable<String>(locationName.value);
     }
+    if (budget.present) {
+      map['budget'] = Variable<double>(budget.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -4388,6 +4434,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
           ..write('startDate: $startDate, ')
           ..write('endDate: $endDate, ')
           ..write('locationName: $locationName, ')
+          ..write('budget: $budget, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -13816,6 +13863,7 @@ typedef $$MemoriesTableCreateCompanionBuilder =
       required DateTime startDate,
       Value<DateTime?> endDate,
       Value<String?> locationName,
+      Value<double?> budget,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -13830,6 +13878,7 @@ typedef $$MemoriesTableUpdateCompanionBuilder =
       Value<DateTime> startDate,
       Value<DateTime?> endDate,
       Value<String?> locationName,
+      Value<double?> budget,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -14006,6 +14055,11 @@ class $$MemoriesTableFilterComposer
 
   ColumnFilters<String> get locationName => $composableBuilder(
     column: $table.locationName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get budget => $composableBuilder(
+    column: $table.budget,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -14219,6 +14273,11 @@ class $$MemoriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get budget => $composableBuilder(
+    column: $table.budget,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14268,6 +14327,9 @@ class $$MemoriesTableAnnotationComposer
     column: $table.locationName,
     builder: (column) => column,
   );
+
+  GeneratedColumn<double> get budget =>
+      $composableBuilder(column: $table.budget, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -14470,6 +14532,7 @@ class $$MemoriesTableTableManager
                 Value<DateTime> startDate = const Value.absent(),
                 Value<DateTime?> endDate = const Value.absent(),
                 Value<String?> locationName = const Value.absent(),
+                Value<double?> budget = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -14482,6 +14545,7 @@ class $$MemoriesTableTableManager
                 startDate: startDate,
                 endDate: endDate,
                 locationName: locationName,
+                budget: budget,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -14496,6 +14560,7 @@ class $$MemoriesTableTableManager
                 required DateTime startDate,
                 Value<DateTime?> endDate = const Value.absent(),
                 Value<String?> locationName = const Value.absent(),
+                Value<double?> budget = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -14508,6 +14573,7 @@ class $$MemoriesTableTableManager
                 startDate: startDate,
                 endDate: endDate,
                 locationName: locationName,
+                budget: budget,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

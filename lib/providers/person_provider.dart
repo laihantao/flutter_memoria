@@ -136,7 +136,15 @@ class PersonNotifier extends AsyncNotifier<void> {
       } else {
         final ext = p.extension(
             avatarFile.name.isNotEmpty ? avatarFile.name : avatarFile.path);
-        final destRel = 'avatars/$id/$id$ext';
+        // Use a unique filename each save so the stored path changes, which
+        // causes the StreamProvider to emit a new Person and PersonAvatar to
+        // re-resolve the file (avoids stale cached bytes when file is replaced).
+        final uniqueName = _uuid.v4();
+        final destRel = 'avatars/$id/$uniqueName$ext';
+        // Delete the previous avatar file to avoid orphaned files.
+        if (avatarPath != null && !avatarPath.startsWith('data:')) {
+          await deleteAppDocFile(avatarPath);
+        }
         await writeAppDocFileBytes(destRel, bytes);
         avatarPath = destRel;
       }

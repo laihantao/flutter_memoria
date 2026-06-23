@@ -114,6 +114,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get memoryStartDateLabel => '开始日期 *';
   @override String get memoryEndDateLabel => '结束日期';
   @override String get memoryParticipantsLabel => '参与者';
+  @override String get memoryBudgetLabel => '预算（可选）';
+  @override String get memoryBudgetInvalid => '请输入有效金额';
 
   // ── Memory detail ─────────────────────────────────────────────────────────
   @override String get memoryNotFound => '时光记录不存在';

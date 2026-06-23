@@ -53,9 +53,19 @@ class BackupService {
       archive.addFile(ArchiveFile(_dbFileName, dbBytes.length, dbBytes));
     }
 
-    // Add all media files
+    // Add all media files (memories, receipts, group photos)
     final mediaPaths = await listDocsDirRecursive('media');
     for (final relPath in mediaPaths) {
+      final bytes = await readAppDocFileBytes(relPath);
+      if (bytes != null) {
+        checksums[relPath] = _sha256(bytes);
+        archive.addFile(ArchiveFile(relPath, bytes.length, bytes));
+      }
+    }
+
+    // Add all avatar files
+    final avatarPaths = await listDocsDirRecursive('avatars');
+    for (final relPath in avatarPaths) {
       final bytes = await readAppDocFileBytes(relPath);
       if (bytes != null) {
         checksums[relPath] = _sha256(bytes);
@@ -117,9 +127,13 @@ class BackupService {
       }
     }
 
-    // Destructive restore
+    // Destructive restore — clear existing media and avatars
     final mediaPaths = await listDocsDirRecursive('media');
     for (final rel in mediaPaths) {
+      await deleteAppDocFile(rel);
+    }
+    final avatarPaths = await listDocsDirRecursive('avatars');
+    for (final rel in avatarPaths) {
       await deleteAppDocFile(rel);
     }
 

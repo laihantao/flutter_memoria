@@ -115,6 +115,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get memoryStartDateLabel => 'Start Date *';
   @override String get memoryEndDateLabel => 'End Date';
   @override String get memoryParticipantsLabel => 'Participants';
+  @override String get memoryBudgetLabel => 'Budget (optional)';
+  @override String get memoryBudgetInvalid => 'Enter a valid amount';
 
   // ── Memory detail ─────────────────────────────────────────────────────────
   @override String get memoryNotFound => 'Moment not found';

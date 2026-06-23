@@ -47,7 +47,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -95,6 +95,25 @@ class AppDatabase extends _$AppDatabase {
                     ),
                   );
                 }
+              }
+            }
+            if (v == 7) {
+              await m.addColumn(memories, memories.budget);
+            }
+            if (v == 8) {
+              // Idempotent: add budget column only if not already present.
+              // Handles devices where v7 migration ran but the column was not
+              // persisted (e.g., schema version was already set to 7 on device
+              // before this migration was written).
+              final cols = await customSelect(
+                'PRAGMA table_info("memories")',
+              ).get();
+              final hasBudget =
+                  cols.any((r) => r.read<String>('name') == 'budget');
+              if (!hasBudget) {
+                await customStatement(
+                  'ALTER TABLE "memories" ADD COLUMN "budget" REAL',
+                );
               }
             }
             if (v == 4) {

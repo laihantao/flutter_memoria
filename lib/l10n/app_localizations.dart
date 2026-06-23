@@ -126,6 +126,8 @@ abstract class AppLocalizations {
   String get memoryStartDateLabel;
   String get memoryEndDateLabel;
   String get memoryParticipantsLabel;
+  String get memoryBudgetLabel;
+  String get memoryBudgetInvalid;
 
   // ── Memory detail ─────────────────────────────────────────────────────────
   String get memoryNotFound;

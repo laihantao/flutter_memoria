@@ -31,6 +31,8 @@ class MemoraApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Memora',
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.light,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
       locale: locale,
@@ -41,11 +43,6 @@ class MemoraApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      // Gradient wrapper so all transparent Scaffolds show the watercolor BG.
-      builder: (context, child) => DecoratedBox(
-        decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-        child: child ?? const SizedBox.shrink(),
-      ),
     );
   }
 }
