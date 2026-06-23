@@ -12,6 +12,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/memory_provider.dart';
 import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
 
@@ -79,6 +80,8 @@ class _MemoryCard extends ConsumerWidget {
     final primaryColor = isDark ? AppColors.darkPrimary : AppColors.primary;
     final primaryDeep = isDark ? AppColors.darkPrimaryDeep : AppColors.primaryDeep;
 
+    final themeExt = Theme.of(context).extension<AppThemeExtension>()!;
+
     final assetsAsync = ref.watch(mediaAssetsProvider(memory.id));
     final assets = assetsAsync.value;
     final String? coverPath = (assets == null || assets.isEmpty)
@@ -93,17 +96,11 @@ class _MemoryCard extends ConsumerWidget {
       onTap: () => context.push('/memories/${memory.id}'),
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [AppColors.darkSurface, const Color(0xFF2E2623)]
-                : [Colors.white, const Color(0xFFFAF5EF)],
-          ),
+          gradient: themeExt.cardGradient,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF78461E).withValues(alpha: 0.38),
+              color: themeExt.cardShadow.withValues(alpha: 0.38),
               offset: const Offset(0, 6),
               blurRadius: 16,
               spreadRadius: -10,
@@ -276,7 +273,7 @@ class _CoverBannerState extends State<_CoverBanner> {
   @override
   Widget build(BuildContext context) {
     final hasCover = _bytes != null;
-    final gradient = widget.isDark ? kCoverGradientDark : kCoverGradientLight;
+    final gradient = Theme.of(context).extension<AppThemeExtension>()!.coverGradient;
 
     return SizedBox(
       height: hasCover ? 180 : 100,

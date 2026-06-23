@@ -25,8 +25,10 @@ import '../../providers/person_provider.dart';
 import '../../services/pdf_service.dart';
 import '../../services/settle_up_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_picker_grid.dart';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
@@ -100,7 +102,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     super.initState();
     _overviewScrollCtrl = ScrollController();
     _overviewScrollCtrl.addListener(_onOverviewScroll);
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _tabs.addListener(_onTabChange);
   }
 
@@ -328,7 +330,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                         onBack: () => context.pop(),
                         onEdit: () =>
                             context.push('/memories/${widget.id}/edit'),
-                        onPdf: () => _exportPdf(memory),
                       ),
                       // Mini header fades in when hero collapses
                       AnimatedOpacity(
@@ -342,7 +343,6 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                             onBack: () => context.pop(),
                             onEdit: () =>
                                 context.push('/memories/${widget.id}/edit'),
-                            onPdf: () => _exportPdf(memory),
                           ),
                         ),
                       ),
@@ -377,6 +377,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                     _ItineraryTab(memoryId: widget.id, memory: memory),
                     _GalleryTab(memoryId: widget.id),
                     _ExpensesTab(memoryId: widget.id, budget: memory.budget),
+                    _SettingsTab(onExport: () => _exportPdf(memory)),
                   ],
                 ),
               ),
@@ -407,14 +408,12 @@ class _HeroCover extends ConsumerStatefulWidget {
   final String memoryId;
   final VoidCallback onBack;
   final VoidCallback onEdit;
-  final VoidCallback onPdf;
 
   const _HeroCover({
     required this.memory,
     required this.memoryId,
     required this.onBack,
     required this.onEdit,
-    required this.onPdf,
   });
 
   @override
@@ -459,8 +458,7 @@ class _HeroCoverState extends ConsumerState<_HeroCover> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final gradient = isDark ? kCoverGradientDark : kCoverGradientLight;
+    final gradient = Theme.of(context).extension<AppThemeExtension>()!.coverGradient;
     final memory = widget.memory;
 
     // Fallback: first photo asset when no coverMediaPath
@@ -545,26 +543,10 @@ class _HeroCoverState extends ConsumerState<_HeroCover> {
                   child: const Icon(Icons.arrow_back_ios_new_rounded,
                       color: Colors.white, size: 16),
                 ),
-                Row(
-                  children: [
-                    _GlassButton(
-                      onTap: widget.onEdit,
-                      child: const Icon(Icons.edit_outlined,
-                          color: Colors.white, size: 16),
-                    ),
-                    const SizedBox(width: 9),
-                    _GlassButton(
-                      onTap: widget.onPdf,
-                      child: Text(
-                        'PDF',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
+                _GlassButton(
+                  onTap: widget.onEdit,
+                  child: const Icon(Icons.edit_outlined,
+                      color: Colors.white, size: 16),
                 ),
               ],
             ),
@@ -677,23 +659,20 @@ class _MiniHeader extends StatelessWidget {
   final double topPad;
   final VoidCallback onBack;
   final VoidCallback onEdit;
-  final VoidCallback onPdf;
 
   const _MiniHeader({
     required this.memory,
     required this.topPad,
     required this.onBack,
     required this.onEdit,
-    required this.onPdf,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? AppColors.darkBackground : AppColors.background;
-    final muted = isDark ? AppColors.darkMuted : AppColors.muted;
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final muted = Theme.of(context).extension<AppThemeExtension>()!.mutedColor;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
 
     return Container(
       color: bg,
@@ -724,19 +703,6 @@ class _MiniHeader extends StatelessWidget {
             onTap: onEdit,
             bg: muted,
             child: Icon(Icons.edit_outlined, size: 15, color: primary),
-          ),
-          const SizedBox(width: 8),
-          _MiniCircleBtn(
-            onTap: onPdf,
-            bg: muted,
-            child: Text(
-              'PDF',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: primary,
-              ),
-            ),
           ),
         ],
       ),
@@ -771,12 +737,11 @@ class _CollapsedInfoStrip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? AppColors.darkBackground : AppColors.background;
-    final border = isDark ? AppColors.darkBorder : AppColors.border;
-    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
-    final primaryTint = isDark ? AppColors.darkPrimaryTint : AppColors.primaryTint;
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final primaryTint = Theme.of(context).extension<AppThemeExtension>()!.accentColor.withValues(alpha: 0.18);
 
     final duration = _durationText(memory);
     final dateStr = _dateText(memory);
@@ -1040,16 +1005,16 @@ class _MemoryTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
-    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
-    final bg = isDark ? AppColors.darkBackground : AppColors.background;
-    final border = isDark ? AppColors.darkBorder : AppColors.border;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
     final tabs = [
       l10n.memoryTabOverview,
       l10n.memoryTabItinerary,
       l10n.memoryTabGallery,
       l10n.memoryTabExpenses,
+      l10n.memoryTabSettings,
     ];
 
     return AnimatedBuilder(
@@ -1307,7 +1272,6 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final double emojiSize = compact ? 17 : 18;
     final double valueFontSize =
@@ -1325,15 +1289,15 @@ class _StatCard extends StatelessWidget {
             gradient: LinearGradient(
               begin: const Alignment(-0.5, -1.0),
               end: const Alignment(0.5, 1.0),
-              colors: isDark
-                  ? [AppColors.darkPrimary, AppColors.darkPrimaryDeep]
-                  : [AppColors.primary, AppColors.primaryDeep],
+              colors: [
+                Theme.of(context).extension<AppThemeExtension>()!.accentColor,
+                Color.lerp(Theme.of(context).extension<AppThemeExtension>()!.accentColor, Colors.black, 0.28)!,
+              ],
             ),
             borderRadius: BorderRadius.circular(radius),
             boxShadow: [
               BoxShadow(
-                color: (isDark ? AppColors.darkPrimaryDeep : AppColors.primary)
-                    .withValues(alpha: 0.55),
+                color: Theme.of(context).extension<AppThemeExtension>()!.accentColor.withValues(alpha: 0.55),
                 offset: const Offset(0, 6),
                 blurRadius: 16,
                 spreadRadius: -7,
@@ -1370,8 +1334,8 @@ class _StatCard extends StatelessWidget {
       );
     }
 
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
 
     return GestureDetector(
       onTap: onTap,
@@ -1381,9 +1345,11 @@ class _StatCard extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: isDark
-                ? [AppColors.darkSurface, const Color(0xFF2E2623)]
-                : [Colors.white, const Color(0xFFFBF6F0)],
+            colors: [
+              Theme.of(context).extension<AppThemeExtension>()!.surfaceColor,
+              Color.lerp(Theme.of(context).extension<AppThemeExtension>()!.surfaceColor,
+                  Theme.of(context).extension<AppThemeExtension>()!.mutedColor, 0.6)!,
+            ],
           ),
           borderRadius: BorderRadius.circular(radius),
           boxShadow: [
@@ -1435,8 +1401,8 @@ class _QuoteBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? AppColors.darkMuted : AppColors.muted;
-    final accent = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.mutedColor;
+    final accent = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
     final textColor = isDark
         ? const Color(0xFFD9C7B8)
         : const Color(0xFF5E4A3C);
@@ -1485,13 +1451,12 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
       text,
       style: GoogleFonts.notoSansSc(
         fontSize: 12,
         fontWeight: FontWeight.w700,
-        color: isDark ? AppColors.darkTextMuted : AppColors.textMuted,
+        color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary,
       ),
     );
   }
@@ -1528,8 +1493,8 @@ class _LocationsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1595,9 +1560,9 @@ class _LocationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
     final grad = _kLocationGradients[index % _kLocationGradients.length];
 
     return GestureDetector(
@@ -1712,10 +1677,10 @@ class _AvatarCircle extends ConsumerWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: personAsync.when(
-        loading: () => Container(color: AppColors.primaryTint),
+        loading: () => Container(color: Theme.of(context).extension<AppThemeExtension>()!.mutedColor),
         error: (_, _) => const SizedBox(),
         data: (person) => person == null
-            ? Container(color: AppColors.primaryTint)
+            ? Container(color: Theme.of(context).extension<AppThemeExtension>()!.mutedColor)
             : PersonAvatar(
                 name: person.name,
                 imagePath: person.avatarPath,
@@ -1734,9 +1699,8 @@ class _ParticipantPickerSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
-    final border = isDark ? AppColors.darkBorder : AppColors.border;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
 
     final personsAsync = ref.watch(personsProvider);
     final selfAsync = ref.watch(selfPersonStreamProvider);
@@ -2075,17 +2039,16 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final itineraryAsync = ref.watch(itineraryProvider(widget.memoryId));
     final isEditing = _editingItem != null;
 
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
     final primaryDeep =
-        isDark ? AppColors.darkPrimaryDeep : AppColors.primaryDeep;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
-    final bg = isDark ? AppColors.darkBackground : AppColors.background;
-    final border = isDark ? AppColors.darkBorder : AppColors.border;
-    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
+        Color.lerp(Theme.of(context).extension<AppThemeExtension>()!.accentColor, Colors.black, 0.2)!;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
 
     return Column(
       children: [
@@ -2200,9 +2163,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
                     hintText: l10n.memoryActivityHint,
                     hintStyle: GoogleFonts.notoSansSc(
                         fontSize: 14,
-                        color: isDark
-                            ? AppColors.darkTextMuted
-                            : const Color(0xFFB3A797)),
+                        color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
                   ),
                 ),
               ),
@@ -2342,13 +2303,12 @@ class _ItineraryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted =
-        isDark ? AppColors.darkTextMuted : AppColors.textMuted;
-    final dividerColor = isDark ? AppColors.darkBorder : AppColors.border;
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final dividerColor = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
     final l10n = context.l10n;
 
     return Container(
@@ -2479,13 +2439,12 @@ class _DateGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final surface = isDark ? AppColors.darkSurface : AppColors.surface;
-    final primary = isDark ? AppColors.darkPrimary : AppColors.primary;
-    final textColor = isDark ? AppColors.darkText : AppColors.text;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted =
-        isDark ? AppColors.darkTextMuted : AppColors.textMuted;
-    final divider = isDark ? AppColors.darkBorder : const Color(0xFFF0E8DC);
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final divider = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
     final l10n = context.l10n;
 
     return Padding(
@@ -2645,7 +2604,6 @@ class _GalleryTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = context.l10n;
     final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
 
@@ -2659,9 +2617,7 @@ class _GalleryTab extends ConsumerWidget {
                 children: [
                   Icon(Icons.photo_library_outlined,
                       size: 56,
-                      color: isDark
-                          ? AppColors.darkTextMuted
-                          : AppColors.textMuted),
+                      color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
                   const SizedBox(height: 12),
                   Text(l10n.memoryNoPhotos,
                       style: Theme.of(context).textTheme.bodyMedium),
@@ -2734,7 +2690,6 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final l10n = context.l10n;
     final isVideo = widget.asset.type == 'video';
     return GestureDetector(
@@ -2793,7 +2748,7 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkMuted : AppColors.primaryTint,
+          color: Theme.of(context).extension<AppThemeExtension>()!.mutedColor,
           borderRadius: BorderRadius.circular(12),
         ),
         clipBehavior: Clip.antiAlias,
@@ -2807,9 +2762,7 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
             else
               Center(
                 child: Icon(Icons.image_outlined,
-                    color: isDark
-                        ? AppColors.darkTextMuted
-                        : AppColors.textMuted),
+                    color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
               ),
             if (isVideo)
               Center(
@@ -2858,9 +2811,7 @@ class _ExpensesTab extends ConsumerWidget {
               children: [
                 Icon(Icons.receipt_long_outlined,
                     size: 48,
-                    color: isDark
-                        ? AppColors.darkTextMuted
-                        : AppColors.textMuted),
+                    color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
                 const SizedBox(height: 12),
                 Text(l10n.memoryNoExpenses),
                 const SizedBox(height: 8),
@@ -2897,14 +2848,15 @@ class _ExpensesTab extends ConsumerWidget {
                 gradient: LinearGradient(
                   begin: const Alignment(-0.5, -1.0),
                   end: const Alignment(0.5, 1.0),
-                  colors: isDark
-                      ? [AppColors.darkPrimary, AppColors.darkPrimaryDeep]
-                      : [AppColors.primary, AppColors.primaryDeep],
+                  colors: [
+                    Theme.of(context).extension<AppThemeExtension>()!.accentColor,
+                    Color.lerp(Theme.of(context).extension<AppThemeExtension>()!.accentColor, Colors.black, 0.28)!,
+                  ],
                 ),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primaryDeep.withValues(alpha: 0.6),
+                    color: Theme.of(context).extension<AppThemeExtension>()!.accentColor.withValues(alpha: 0.5),
                     offset: const Offset(0, 10),
                     blurRadius: 24,
                     spreadRadius: -12,
@@ -2992,19 +2944,15 @@ class _ExpensesTab extends ConsumerWidget {
                   final cat = catMap[tx.categoryId];
                   final isExp = tx.type == 'expense';
                   final surface =
-                      isDark ? AppColors.darkSurface : AppColors.surface;
+                      Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
                   final textColor =
-                      isDark ? AppColors.darkText : AppColors.text;
-                  final textMuted = isDark
-                      ? AppColors.darkTextMuted
-                      : AppColors.textMuted;
+                      Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+                  final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
                   final iconBg =
-                      isDark ? AppColors.darkMuted : AppColors.muted;
-                  final amtBg = isDark
-                      ? AppColors.darkPrimaryTint
-                      : const Color(0xFFF5E3DA);
+                      Theme.of(context).extension<AppThemeExtension>()!.mutedColor;
+                  final amtBg = Theme.of(context).extension<AppThemeExtension>()!.accentColor.withValues(alpha: 0.18);
                   final amtColor =
-                      isDark ? AppColors.darkPrimary : AppColors.primary;
+                      Theme.of(context).extension<AppThemeExtension>()!.accentColor;
 
                   return GestureDetector(
                     onTap: () =>
@@ -3755,4 +3703,87 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
                     ),
         ),
       );
+}
+
+// ── Settings Tab ───────────────────────────────────────────────────────────────
+
+class _SettingsTab extends StatelessWidget {
+  final VoidCallback onExport;
+  const _SettingsTab({required this.onExport});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
+    final text = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+
+    Widget sectionHeader(String label) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+          child: Text(
+            label,
+            style: GoogleFonts.notoSansSc(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: textMuted,
+              letterSpacing: 0.4,
+            ),
+          ),
+        );
+
+    Widget divider() => Divider(height: 1, thickness: 1, color: border);
+
+    return ColoredBox(
+      color: bg,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 40),
+        children: [
+          // ── 导出 section ──
+          sectionHeader('导出'),
+          Container(
+            color: surface,
+            child: Column(
+              children: [
+                divider(),
+                InkWell(
+                  onTap: onExport,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.picture_as_pdf_outlined,
+                            size: 20, color: primary),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            '导出 PDF',
+                            style: GoogleFonts.notoSansSc(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: text,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 20, color: textMuted),
+                      ],
+                    ),
+                  ),
+                ),
+                divider(),
+              ],
+            ),
+          ),
+
+          // ── 主题 section (quick-access shortcut; authoritative state lives in global provider) ──
+          sectionHeader('主题'),
+          const ThemePickerGrid(),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
 }

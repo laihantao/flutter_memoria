@@ -142,6 +142,7 @@ abstract class AppLocalizations {
   String get memoryTabItinerary;
   String get memoryTabGallery;
   String get memoryTabExpenses;
+  String get memoryTabSettings;
   String get memoryAddExpenseFab;
   String get memoryEditDetails;
   String get memoryEditItinerary;

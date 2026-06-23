@@ -130,6 +130,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get memoryTabItinerary => '行程';
   @override String get memoryTabGallery => '相册';
   @override String get memoryTabExpenses => '费用';
+  @override String get memoryTabSettings => '设定';
   @override String get memoryAddExpenseFab => '记一笔';
   @override String get memoryEditDetails => '编辑详情';
   @override String get memoryEditItinerary => '编辑行程';

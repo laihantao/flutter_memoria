@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'app_theme_extension.dart';
+import 'theme_config.dart';
+
 // ── 陶土 + 米白 Color Tokens ──────────────────────────────────────────────────
 
 class AppColors {
@@ -55,7 +58,7 @@ class AppColors {
   static const sageMoss        = secondaryAccent;
 }
 
-// Cover gradients
+// Cover gradients (kept for any legacy references)
 const kCoverGradientLight = LinearGradient(
   begin: Alignment(-0.5, -1.0),
   end: Alignment(0.5, 1.0),
@@ -73,18 +76,25 @@ const kCoverGradientDark = LinearGradient(
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 class AppTheme {
-  static ThemeData get light => _build(Brightness.light);
-  static ThemeData get dark  => _build(Brightness.dark);
+  static ThemeData light([ThemeConfig? config]) =>
+      _build(Brightness.light, config ?? kThemes.first);
+  static ThemeData dark([ThemeConfig? config]) =>
+      _build(Brightness.dark, config ?? kThemes.first);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, ThemeConfig config) {
     final isDark = brightness == Brightness.dark;
-    final bg         = isDark ? AppColors.darkBackground : AppColors.background;
-    final surface    = isDark ? AppColors.darkSurface    : AppColors.surface;
-    final primary    = isDark ? AppColors.darkPrimary    : AppColors.primary;
-    final text       = isDark ? AppColors.darkText       : AppColors.text;
-    final textMuted  = isDark ? AppColors.darkTextMuted  : AppColors.textMuted;
-    final border     = isDark ? AppColors.darkBorder     : AppColors.border;
-    final muted      = isDark ? AppColors.darkMuted      : AppColors.muted;
+
+    // All main colors come from the active ThemeConfig
+    final bg        = config.backgroundColor;
+    final surface   = config.surfaceColor;
+    final primary   = config.accentColor;
+    final text      = config.textPrimaryColor;
+    final textMuted = config.textSecondaryColor;
+    final border    = config.borderColor;
+    final muted     = config.mutedColor;
+
+    // Semantic colors are always fixed — never theme-overridden
+    const errorColor = AppColors.error;
 
     final noto = (double size, FontWeight weight, Color color) =>
         GoogleFonts.notoSansSc(fontSize: size, fontWeight: weight, color: color);
@@ -101,12 +111,12 @@ class AppTheme {
         onSurface: text,
       ).copyWith(
         primary: primary,
-        onPrimary: isDark ? AppColors.darkBackground : Colors.white,
-        secondary: isDark ? AppColors.darkPrimaryTint : AppColors.primaryTint,
+        onPrimary: isDark ? bg : Colors.white,
+        secondary: muted,
         surface: surface,
         onSurface: text,
         surfaceContainerHighest: muted,
-        error: AppColors.error,
+        error: errorColor,
       ),
       scaffoldBackgroundColor: bg,
       cardTheme: CardThemeData(
@@ -163,7 +173,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
-          foregroundColor: isDark ? AppColors.darkBackground : Colors.white,
+          foregroundColor: isDark ? bg : Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14)),
@@ -196,7 +206,7 @@ class AppTheme {
       dividerTheme: DividerThemeData(color: border, thickness: 1),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: primary,
-        foregroundColor: isDark ? AppColors.darkBackground : Colors.white,
+        foregroundColor: isDark ? bg : Colors.white,
         elevation: 0,
         shape: const CircleBorder(),
       ),
@@ -210,12 +220,27 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: text,
         contentTextStyle: TextStyle(
-            color: isDark ? AppColors.darkBackground : Colors.white),
+            color: isDark ? bg : Colors.white),
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         behavior: SnackBarBehavior.floating,
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: primary),
+      extensions: [
+        AppThemeExtension(
+          coverGradient: isDark ? config.darkGradient : config.lightGradient,
+          cardGradient:
+              isDark ? config.darkCardGradient : config.lightCardGradient,
+          cardShadow: config.cardShadowColor,
+          backgroundColor: bg,
+          surfaceColor: surface,
+          accentColor: primary,
+          textPrimary: text,
+          textSecondary: textMuted,
+          mutedColor: muted,
+          borderColor: border,
+        ),
+      ],
     );
   }
 }

@@ -3,14 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../providers/database_provider.dart';
 import '../../providers/locale_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../services/backup_service.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
+import '../../widgets/theme_picker_grid.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -27,8 +30,8 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           _SectionHeader(l10n.settingsSectionPersonal),
           ListTile(
-            leading: const Icon(Icons.person_outline,
-                color: AppColors.warmBrown),
+            leading: Icon(Icons.person_outline,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: Text(l10n.settingsMyProfile),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
@@ -39,6 +42,11 @@ class SettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          const Divider(),
+          _SectionHeader('外观'),
+          const ThemePickerGrid(),
+          const SizedBox(height: 12),
+          _AnimationsToggle(),
           const Divider(),
           _SectionHeader(l10n.settingsSectionLanguage),
           RadioGroup<Locale>(
@@ -61,8 +69,8 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           _SectionHeader(l10n.settingsSectionMoments),
           ListTile(
-            leading: const Icon(Icons.category_outlined,
-                color: AppColors.warmBrown),
+            leading: Icon(Icons.category_outlined,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: Text(l10n.settingsCategories),
             subtitle: Text(l10n.settingsCategoriesSubtitle),
             trailing: const Icon(Icons.chevron_right),
@@ -71,8 +79,8 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           _SectionHeader(l10n.settingsSectionWallets),
           ListTile(
-            leading: const Icon(Icons.account_balance_wallet_outlined,
-                color: AppColors.warmBrown),
+            leading: Icon(Icons.account_balance_wallet_outlined,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: Text(l10n.settingsMyWallets),
             subtitle: Text(l10n.settingsMyWalletsSubtitle),
             trailing: const Icon(Icons.chevron_right),
@@ -81,8 +89,8 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           _SectionHeader(l10n.settingsSectionBackup),
           ListTile(
-            leading: const Icon(Icons.backup_outlined,
-                color: AppColors.warmBrown),
+            leading: Icon(Icons.backup_outlined,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: Text(l10n.settingsExport),
             subtitle: Text(kIsWeb
                 ? l10n.settingsExportMobileOnly
@@ -91,8 +99,8 @@ class SettingsScreen extends ConsumerWidget {
             onTap: kIsWeb ? null : () => _exportBackup(context, l10n),
           ),
           ListTile(
-            leading: const Icon(Icons.restore_outlined,
-                color: AppColors.warmBrown),
+            leading: Icon(Icons.restore_outlined,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: Text(l10n.settingsImport),
             subtitle: Text(kIsWeb
                 ? l10n.settingsImportMobileOnly
@@ -103,7 +111,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           _SectionHeader(l10n.settingsSectionAbout),
           ListTile(
-            leading: const Icon(Icons.info_outline, color: AppColors.warmBrown),
+            leading: Icon(Icons.info_outline, color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
             title: const Text('Memora'),
             subtitle: Text(l10n.settingsAppVersion),
           ),
@@ -208,10 +216,58 @@ class _SectionHeader extends StatelessWidget {
         child: Text(
           title,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.warmBrown,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.5,
               ),
         ),
       );
+}
+
+class _AnimationsToggle extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ext = Theme.of(context).extension<AppThemeExtension>()!;
+    final enabled = ref.watch(animationsEnabledProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '动态背景效果',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: ext.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '关闭后保留主题配色与图标，但不显示动态动画效果，适合性能较弱的设备',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: ext.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: enabled,
+            activeThumbColor: ext.accentColor,
+            onChanged: (val) =>
+                ref.read(animationsEnabledProvider.notifier).setEnabled(val),
+          ),
+        ],
+      ),
+    );
+  }
 }

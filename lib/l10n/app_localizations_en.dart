@@ -133,6 +133,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get memoryTabItinerary => 'Itinerary';
   @override String get memoryTabGallery => 'Gallery';
   @override String get memoryTabExpenses => 'Expenses';
+  @override String get memoryTabSettings => 'Settings';
   @override String get memoryAddExpenseFab => 'Add Expense';
   @override String get memoryEditDetails => 'Edit Details';
   @override String get memoryEditItinerary => 'Edit Item';
