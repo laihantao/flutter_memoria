@@ -102,6 +102,7 @@ class Memories extends Table {
   DateTimeColumn get endDate => dateTime().nullable()();
   TextColumn get locationName => text().nullable()();
   RealColumn get budget => real().nullable()();
+  TextColumn get budgetCurrency => text().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -151,6 +152,29 @@ class MemoryLocations extends Table {
   TextColumn get memoryId => text().references(Memories, #id)();
   TextColumn get name => text()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class ItineraryDays extends Table {
+  TextColumn get id => text()();
+  TextColumn get memoryId => text().references(Memories, #id)();
+  IntColumn get dayNumber => integer()();
+  DateTimeColumn get date => dateTime().nullable()();
+  TextColumn get dayNote => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class ItineraryStops extends Table {
+  TextColumn get id => text()();
+  TextColumn get dayId => text().references(ItineraryDays, #id)();
+  TextColumn get locationId => text().nullable().references(MemoryLocations, #id)();
+  IntColumn get orderIndex => integer()();
+  TextColumn get activityText => text()();
+  TextColumn get timeLabel => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

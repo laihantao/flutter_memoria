@@ -3872,6 +3872,17 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _budgetCurrencyMeta = const VerificationMeta(
+    'budgetCurrency',
+  );
+  @override
+  late final GeneratedColumn<String> budgetCurrency = GeneratedColumn<String>(
+    'budget_currency',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -3907,6 +3918,7 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
     endDate,
     locationName,
     budget,
+    budgetCurrency,
     createdAt,
     updatedAt,
   ];
@@ -3990,6 +4002,15 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
         budget.isAcceptableOrUnknown(data['budget']!, _budgetMeta),
       );
     }
+    if (data.containsKey('budget_currency')) {
+      context.handle(
+        _budgetCurrencyMeta,
+        budgetCurrency.isAcceptableOrUnknown(
+          data['budget_currency']!,
+          _budgetCurrencyMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4047,6 +4068,10 @@ class $MemoriesTable extends Memories with TableInfo<$MemoriesTable, Memory> {
         DriftSqlType.double,
         data['${effectivePrefix}budget'],
       ),
+      budgetCurrency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}budget_currency'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -4074,6 +4099,7 @@ class Memory extends DataClass implements Insertable<Memory> {
   final DateTime? endDate;
   final String? locationName;
   final double? budget;
+  final String? budgetCurrency;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Memory({
@@ -4086,6 +4112,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     this.endDate,
     this.locationName,
     this.budget,
+    this.budgetCurrency,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -4110,6 +4137,9 @@ class Memory extends DataClass implements Insertable<Memory> {
     }
     if (!nullToAbsent || budget != null) {
       map['budget'] = Variable<double>(budget);
+    }
+    if (!nullToAbsent || budgetCurrency != null) {
+      map['budget_currency'] = Variable<String>(budgetCurrency);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -4137,6 +4167,9 @@ class Memory extends DataClass implements Insertable<Memory> {
       budget: budget == null && nullToAbsent
           ? const Value.absent()
           : Value(budget),
+      budgetCurrency: budgetCurrency == null && nullToAbsent
+          ? const Value.absent()
+          : Value(budgetCurrency),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -4157,6 +4190,7 @@ class Memory extends DataClass implements Insertable<Memory> {
       endDate: serializer.fromJson<DateTime?>(json['endDate']),
       locationName: serializer.fromJson<String?>(json['locationName']),
       budget: serializer.fromJson<double?>(json['budget']),
+      budgetCurrency: serializer.fromJson<String?>(json['budgetCurrency']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -4174,6 +4208,7 @@ class Memory extends DataClass implements Insertable<Memory> {
       'endDate': serializer.toJson<DateTime?>(endDate),
       'locationName': serializer.toJson<String?>(locationName),
       'budget': serializer.toJson<double?>(budget),
+      'budgetCurrency': serializer.toJson<String?>(budgetCurrency),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -4189,6 +4224,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     Value<DateTime?> endDate = const Value.absent(),
     Value<String?> locationName = const Value.absent(),
     Value<double?> budget = const Value.absent(),
+    Value<String?> budgetCurrency = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Memory(
@@ -4203,6 +4239,9 @@ class Memory extends DataClass implements Insertable<Memory> {
     endDate: endDate.present ? endDate.value : this.endDate,
     locationName: locationName.present ? locationName.value : this.locationName,
     budget: budget.present ? budget.value : this.budget,
+    budgetCurrency: budgetCurrency.present
+        ? budgetCurrency.value
+        : this.budgetCurrency,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -4223,6 +4262,9 @@ class Memory extends DataClass implements Insertable<Memory> {
           ? data.locationName.value
           : this.locationName,
       budget: data.budget.present ? data.budget.value : this.budget,
+      budgetCurrency: data.budgetCurrency.present
+          ? data.budgetCurrency.value
+          : this.budgetCurrency,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -4240,6 +4282,7 @@ class Memory extends DataClass implements Insertable<Memory> {
           ..write('endDate: $endDate, ')
           ..write('locationName: $locationName, ')
           ..write('budget: $budget, ')
+          ..write('budgetCurrency: $budgetCurrency, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -4257,6 +4300,7 @@ class Memory extends DataClass implements Insertable<Memory> {
     endDate,
     locationName,
     budget,
+    budgetCurrency,
     createdAt,
     updatedAt,
   );
@@ -4273,6 +4317,7 @@ class Memory extends DataClass implements Insertable<Memory> {
           other.endDate == this.endDate &&
           other.locationName == this.locationName &&
           other.budget == this.budget &&
+          other.budgetCurrency == this.budgetCurrency &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -4287,6 +4332,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
   final Value<DateTime?> endDate;
   final Value<String?> locationName;
   final Value<double?> budget;
+  final Value<String?> budgetCurrency;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -4300,6 +4346,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     this.endDate = const Value.absent(),
     this.locationName = const Value.absent(),
     this.budget = const Value.absent(),
+    this.budgetCurrency = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4314,6 +4361,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     this.endDate = const Value.absent(),
     this.locationName = const Value.absent(),
     this.budget = const Value.absent(),
+    this.budgetCurrency = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4331,6 +4379,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     Expression<DateTime>? endDate,
     Expression<String>? locationName,
     Expression<double>? budget,
+    Expression<String>? budgetCurrency,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -4345,6 +4394,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
       if (endDate != null) 'end_date': endDate,
       if (locationName != null) 'location_name': locationName,
       if (budget != null) 'budget': budget,
+      if (budgetCurrency != null) 'budget_currency': budgetCurrency,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -4361,6 +4411,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     Value<DateTime?>? endDate,
     Value<String?>? locationName,
     Value<double?>? budget,
+    Value<String?>? budgetCurrency,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -4375,6 +4426,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
       endDate: endDate ?? this.endDate,
       locationName: locationName ?? this.locationName,
       budget: budget ?? this.budget,
+      budgetCurrency: budgetCurrency ?? this.budgetCurrency,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -4411,6 +4463,9 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
     if (budget.present) {
       map['budget'] = Variable<double>(budget.value);
     }
+    if (budgetCurrency.present) {
+      map['budget_currency'] = Variable<String>(budgetCurrency.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -4435,6 +4490,7 @@ class MemoriesCompanion extends UpdateCompanion<Memory> {
           ..write('endDate: $endDate, ')
           ..write('locationName: $locationName, ')
           ..write('budget: $budget, ')
+          ..write('budgetCurrency: $budgetCurrency, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -5534,6 +5590,794 @@ class ItineraryItemsCompanion extends UpdateCompanion<ItineraryItem> {
           ..write('locationName: $locationName, ')
           ..write('notes: $notes, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ItineraryDaysTable extends ItineraryDays
+    with TableInfo<$ItineraryDaysTable, ItineraryDay> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItineraryDaysTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _memoryIdMeta = const VerificationMeta(
+    'memoryId',
+  );
+  @override
+  late final GeneratedColumn<String> memoryId = GeneratedColumn<String>(
+    'memory_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES memories (id)',
+    ),
+  );
+  static const VerificationMeta _dayNumberMeta = const VerificationMeta(
+    'dayNumber',
+  );
+  @override
+  late final GeneratedColumn<int> dayNumber = GeneratedColumn<int>(
+    'day_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<DateTime> date = GeneratedColumn<DateTime>(
+    'date',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dayNoteMeta = const VerificationMeta(
+    'dayNote',
+  );
+  @override
+  late final GeneratedColumn<String> dayNote = GeneratedColumn<String>(
+    'day_note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    memoryId,
+    dayNumber,
+    date,
+    dayNote,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'itinerary_days';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItineraryDay> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('memory_id')) {
+      context.handle(
+        _memoryIdMeta,
+        memoryId.isAcceptableOrUnknown(data['memory_id']!, _memoryIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_memoryIdMeta);
+    }
+    if (data.containsKey('day_number')) {
+      context.handle(
+        _dayNumberMeta,
+        dayNumber.isAcceptableOrUnknown(data['day_number']!, _dayNumberMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayNumberMeta);
+    }
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    }
+    if (data.containsKey('day_note')) {
+      context.handle(
+        _dayNoteMeta,
+        dayNote.isAcceptableOrUnknown(data['day_note']!, _dayNoteMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ItineraryDay map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItineraryDay(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      memoryId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}memory_id'],
+      )!,
+      dayNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}day_number'],
+      )!,
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}date'],
+      ),
+      dayNote: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}day_note'],
+      ),
+    );
+  }
+
+  @override
+  $ItineraryDaysTable createAlias(String alias) {
+    return $ItineraryDaysTable(attachedDatabase, alias);
+  }
+}
+
+class ItineraryDay extends DataClass implements Insertable<ItineraryDay> {
+  final String id;
+  final String memoryId;
+  final int dayNumber;
+  final DateTime? date;
+  final String? dayNote;
+  const ItineraryDay({
+    required this.id,
+    required this.memoryId,
+    required this.dayNumber,
+    this.date,
+    this.dayNote,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['memory_id'] = Variable<String>(memoryId);
+    map['day_number'] = Variable<int>(dayNumber);
+    if (!nullToAbsent || date != null) {
+      map['date'] = Variable<DateTime>(date);
+    }
+    if (!nullToAbsent || dayNote != null) {
+      map['day_note'] = Variable<String>(dayNote);
+    }
+    return map;
+  }
+
+  ItineraryDaysCompanion toCompanion(bool nullToAbsent) {
+    return ItineraryDaysCompanion(
+      id: Value(id),
+      memoryId: Value(memoryId),
+      dayNumber: Value(dayNumber),
+      date: date == null && nullToAbsent ? const Value.absent() : Value(date),
+      dayNote: dayNote == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dayNote),
+    );
+  }
+
+  factory ItineraryDay.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItineraryDay(
+      id: serializer.fromJson<String>(json['id']),
+      memoryId: serializer.fromJson<String>(json['memoryId']),
+      dayNumber: serializer.fromJson<int>(json['dayNumber']),
+      date: serializer.fromJson<DateTime?>(json['date']),
+      dayNote: serializer.fromJson<String?>(json['dayNote']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'memoryId': serializer.toJson<String>(memoryId),
+      'dayNumber': serializer.toJson<int>(dayNumber),
+      'date': serializer.toJson<DateTime?>(date),
+      'dayNote': serializer.toJson<String?>(dayNote),
+    };
+  }
+
+  ItineraryDay copyWith({
+    String? id,
+    String? memoryId,
+    int? dayNumber,
+    Value<DateTime?> date = const Value.absent(),
+    Value<String?> dayNote = const Value.absent(),
+  }) => ItineraryDay(
+    id: id ?? this.id,
+    memoryId: memoryId ?? this.memoryId,
+    dayNumber: dayNumber ?? this.dayNumber,
+    date: date.present ? date.value : this.date,
+    dayNote: dayNote.present ? dayNote.value : this.dayNote,
+  );
+  ItineraryDay copyWithCompanion(ItineraryDaysCompanion data) {
+    return ItineraryDay(
+      id: data.id.present ? data.id.value : this.id,
+      memoryId: data.memoryId.present ? data.memoryId.value : this.memoryId,
+      dayNumber: data.dayNumber.present ? data.dayNumber.value : this.dayNumber,
+      date: data.date.present ? data.date.value : this.date,
+      dayNote: data.dayNote.present ? data.dayNote.value : this.dayNote,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItineraryDay(')
+          ..write('id: $id, ')
+          ..write('memoryId: $memoryId, ')
+          ..write('dayNumber: $dayNumber, ')
+          ..write('date: $date, ')
+          ..write('dayNote: $dayNote')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, memoryId, dayNumber, date, dayNote);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItineraryDay &&
+          other.id == this.id &&
+          other.memoryId == this.memoryId &&
+          other.dayNumber == this.dayNumber &&
+          other.date == this.date &&
+          other.dayNote == this.dayNote);
+}
+
+class ItineraryDaysCompanion extends UpdateCompanion<ItineraryDay> {
+  final Value<String> id;
+  final Value<String> memoryId;
+  final Value<int> dayNumber;
+  final Value<DateTime?> date;
+  final Value<String?> dayNote;
+  final Value<int> rowid;
+  const ItineraryDaysCompanion({
+    this.id = const Value.absent(),
+    this.memoryId = const Value.absent(),
+    this.dayNumber = const Value.absent(),
+    this.date = const Value.absent(),
+    this.dayNote = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItineraryDaysCompanion.insert({
+    required String id,
+    required String memoryId,
+    required int dayNumber,
+    this.date = const Value.absent(),
+    this.dayNote = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       memoryId = Value(memoryId),
+       dayNumber = Value(dayNumber);
+  static Insertable<ItineraryDay> custom({
+    Expression<String>? id,
+    Expression<String>? memoryId,
+    Expression<int>? dayNumber,
+    Expression<DateTime>? date,
+    Expression<String>? dayNote,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (memoryId != null) 'memory_id': memoryId,
+      if (dayNumber != null) 'day_number': dayNumber,
+      if (date != null) 'date': date,
+      if (dayNote != null) 'day_note': dayNote,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItineraryDaysCompanion copyWith({
+    Value<String>? id,
+    Value<String>? memoryId,
+    Value<int>? dayNumber,
+    Value<DateTime?>? date,
+    Value<String?>? dayNote,
+    Value<int>? rowid,
+  }) {
+    return ItineraryDaysCompanion(
+      id: id ?? this.id,
+      memoryId: memoryId ?? this.memoryId,
+      dayNumber: dayNumber ?? this.dayNumber,
+      date: date ?? this.date,
+      dayNote: dayNote ?? this.dayNote,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (memoryId.present) {
+      map['memory_id'] = Variable<String>(memoryId.value);
+    }
+    if (dayNumber.present) {
+      map['day_number'] = Variable<int>(dayNumber.value);
+    }
+    if (date.present) {
+      map['date'] = Variable<DateTime>(date.value);
+    }
+    if (dayNote.present) {
+      map['day_note'] = Variable<String>(dayNote.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItineraryDaysCompanion(')
+          ..write('id: $id, ')
+          ..write('memoryId: $memoryId, ')
+          ..write('dayNumber: $dayNumber, ')
+          ..write('date: $date, ')
+          ..write('dayNote: $dayNote, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ItineraryStopsTable extends ItineraryStops
+    with TableInfo<$ItineraryStopsTable, ItineraryStop> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItineraryStopsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dayIdMeta = const VerificationMeta('dayId');
+  @override
+  late final GeneratedColumn<String> dayId = GeneratedColumn<String>(
+    'day_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES itinerary_days (id)',
+    ),
+  );
+  static const VerificationMeta _locationIdMeta = const VerificationMeta(
+    'locationId',
+  );
+  @override
+  late final GeneratedColumn<String> locationId = GeneratedColumn<String>(
+    'location_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES memory_locations (id)',
+    ),
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _activityTextMeta = const VerificationMeta(
+    'activityText',
+  );
+  @override
+  late final GeneratedColumn<String> activityText = GeneratedColumn<String>(
+    'activity_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _timeLabelMeta = const VerificationMeta(
+    'timeLabel',
+  );
+  @override
+  late final GeneratedColumn<String> timeLabel = GeneratedColumn<String>(
+    'time_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    dayId,
+    locationId,
+    orderIndex,
+    activityText,
+    timeLabel,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'itinerary_stops';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItineraryStop> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('day_id')) {
+      context.handle(
+        _dayIdMeta,
+        dayId.isAcceptableOrUnknown(data['day_id']!, _dayIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dayIdMeta);
+    }
+    if (data.containsKey('location_id')) {
+      context.handle(
+        _locationIdMeta,
+        locationId.isAcceptableOrUnknown(data['location_id']!, _locationIdMeta),
+      );
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    if (data.containsKey('activity_text')) {
+      context.handle(
+        _activityTextMeta,
+        activityText.isAcceptableOrUnknown(
+          data['activity_text']!,
+          _activityTextMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_activityTextMeta);
+    }
+    if (data.containsKey('time_label')) {
+      context.handle(
+        _timeLabelMeta,
+        timeLabel.isAcceptableOrUnknown(data['time_label']!, _timeLabelMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ItineraryStop map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItineraryStop(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      dayId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}day_id'],
+      )!,
+      locationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}location_id'],
+      ),
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      activityText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}activity_text'],
+      )!,
+      timeLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}time_label'],
+      ),
+    );
+  }
+
+  @override
+  $ItineraryStopsTable createAlias(String alias) {
+    return $ItineraryStopsTable(attachedDatabase, alias);
+  }
+}
+
+class ItineraryStop extends DataClass implements Insertable<ItineraryStop> {
+  final String id;
+  final String dayId;
+  final String? locationId;
+  final int orderIndex;
+  final String activityText;
+  final String? timeLabel;
+  const ItineraryStop({
+    required this.id,
+    required this.dayId,
+    this.locationId,
+    required this.orderIndex,
+    required this.activityText,
+    this.timeLabel,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['day_id'] = Variable<String>(dayId);
+    if (!nullToAbsent || locationId != null) {
+      map['location_id'] = Variable<String>(locationId);
+    }
+    map['order_index'] = Variable<int>(orderIndex);
+    map['activity_text'] = Variable<String>(activityText);
+    if (!nullToAbsent || timeLabel != null) {
+      map['time_label'] = Variable<String>(timeLabel);
+    }
+    return map;
+  }
+
+  ItineraryStopsCompanion toCompanion(bool nullToAbsent) {
+    return ItineraryStopsCompanion(
+      id: Value(id),
+      dayId: Value(dayId),
+      locationId: locationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(locationId),
+      orderIndex: Value(orderIndex),
+      activityText: Value(activityText),
+      timeLabel: timeLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(timeLabel),
+    );
+  }
+
+  factory ItineraryStop.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItineraryStop(
+      id: serializer.fromJson<String>(json['id']),
+      dayId: serializer.fromJson<String>(json['dayId']),
+      locationId: serializer.fromJson<String?>(json['locationId']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      activityText: serializer.fromJson<String>(json['activityText']),
+      timeLabel: serializer.fromJson<String?>(json['timeLabel']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'dayId': serializer.toJson<String>(dayId),
+      'locationId': serializer.toJson<String?>(locationId),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'activityText': serializer.toJson<String>(activityText),
+      'timeLabel': serializer.toJson<String?>(timeLabel),
+    };
+  }
+
+  ItineraryStop copyWith({
+    String? id,
+    String? dayId,
+    Value<String?> locationId = const Value.absent(),
+    int? orderIndex,
+    String? activityText,
+    Value<String?> timeLabel = const Value.absent(),
+  }) => ItineraryStop(
+    id: id ?? this.id,
+    dayId: dayId ?? this.dayId,
+    locationId: locationId.present ? locationId.value : this.locationId,
+    orderIndex: orderIndex ?? this.orderIndex,
+    activityText: activityText ?? this.activityText,
+    timeLabel: timeLabel.present ? timeLabel.value : this.timeLabel,
+  );
+  ItineraryStop copyWithCompanion(ItineraryStopsCompanion data) {
+    return ItineraryStop(
+      id: data.id.present ? data.id.value : this.id,
+      dayId: data.dayId.present ? data.dayId.value : this.dayId,
+      locationId: data.locationId.present
+          ? data.locationId.value
+          : this.locationId,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      activityText: data.activityText.present
+          ? data.activityText.value
+          : this.activityText,
+      timeLabel: data.timeLabel.present ? data.timeLabel.value : this.timeLabel,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItineraryStop(')
+          ..write('id: $id, ')
+          ..write('dayId: $dayId, ')
+          ..write('locationId: $locationId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('activityText: $activityText, ')
+          ..write('timeLabel: $timeLabel')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, dayId, locationId, orderIndex, activityText, timeLabel);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItineraryStop &&
+          other.id == this.id &&
+          other.dayId == this.dayId &&
+          other.locationId == this.locationId &&
+          other.orderIndex == this.orderIndex &&
+          other.activityText == this.activityText &&
+          other.timeLabel == this.timeLabel);
+}
+
+class ItineraryStopsCompanion extends UpdateCompanion<ItineraryStop> {
+  final Value<String> id;
+  final Value<String> dayId;
+  final Value<String?> locationId;
+  final Value<int> orderIndex;
+  final Value<String> activityText;
+  final Value<String?> timeLabel;
+  final Value<int> rowid;
+  const ItineraryStopsCompanion({
+    this.id = const Value.absent(),
+    this.dayId = const Value.absent(),
+    this.locationId = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.activityText = const Value.absent(),
+    this.timeLabel = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItineraryStopsCompanion.insert({
+    required String id,
+    required String dayId,
+    this.locationId = const Value.absent(),
+    required int orderIndex,
+    required String activityText,
+    this.timeLabel = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       dayId = Value(dayId),
+       orderIndex = Value(orderIndex),
+       activityText = Value(activityText);
+  static Insertable<ItineraryStop> custom({
+    Expression<String>? id,
+    Expression<String>? dayId,
+    Expression<String>? locationId,
+    Expression<int>? orderIndex,
+    Expression<String>? activityText,
+    Expression<String>? timeLabel,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (dayId != null) 'day_id': dayId,
+      if (locationId != null) 'location_id': locationId,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (activityText != null) 'activity_text': activityText,
+      if (timeLabel != null) 'time_label': timeLabel,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItineraryStopsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? dayId,
+    Value<String?>? locationId,
+    Value<int>? orderIndex,
+    Value<String>? activityText,
+    Value<String?>? timeLabel,
+    Value<int>? rowid,
+  }) {
+    return ItineraryStopsCompanion(
+      id: id ?? this.id,
+      dayId: dayId ?? this.dayId,
+      locationId: locationId ?? this.locationId,
+      orderIndex: orderIndex ?? this.orderIndex,
+      activityText: activityText ?? this.activityText,
+      timeLabel: timeLabel ?? this.timeLabel,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (dayId.present) {
+      map['day_id'] = Variable<String>(dayId.value);
+    }
+    if (locationId.present) {
+      map['location_id'] = Variable<String>(locationId.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (activityText.present) {
+      map['activity_text'] = Variable<String>(activityText.value);
+    }
+    if (timeLabel.present) {
+      map['time_label'] = Variable<String>(timeLabel.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItineraryStopsCompanion(')
+          ..write('id: $id, ')
+          ..write('dayId: $dayId, ')
+          ..write('locationId: $locationId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('activityText: $activityText, ')
+          ..write('timeLabel: $timeLabel, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9104,6 +9948,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $ItineraryItemsTable itineraryItems = $ItineraryItemsTable(this);
+  late final $ItineraryDaysTable itineraryDays = $ItineraryDaysTable(this);
+  late final $ItineraryStopsTable itineraryStops = $ItineraryStopsTable(this);
   late final $MediaAssetsTable mediaAssets = $MediaAssetsTable(this);
   late final $WalletsTable wallets = $WalletsTable(this);
   late final $CategoriesTable categories = $CategoriesTable(this);
@@ -9138,6 +9984,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     memoryParticipants,
     memoryLocations,
     itineraryItems,
+    itineraryDays,
+    itineraryStops,
     mediaAssets,
     wallets,
     categories,
@@ -13864,6 +14712,7 @@ typedef $$MemoriesTableCreateCompanionBuilder =
       Value<DateTime?> endDate,
       Value<String?> locationName,
       Value<double?> budget,
+      Value<String?> budgetCurrency,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -13879,6 +14728,7 @@ typedef $$MemoriesTableUpdateCompanionBuilder =
       Value<DateTime?> endDate,
       Value<String?> locationName,
       Value<double?> budget,
+      Value<String?> budgetCurrency,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -13948,6 +14798,24 @@ final class $$MemoriesTableReferences
     ).filter((f) => f.memoryId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_itineraryItemsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$ItineraryDaysTable, List<ItineraryDay>>
+  _itineraryDaysRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.itineraryDays,
+    aliasName: $_aliasNameGenerator(db.memories.id, db.itineraryDays.memoryId),
+  );
+
+  $$ItineraryDaysTableProcessedTableManager get itineraryDaysRefs {
+    final manager = $$ItineraryDaysTableTableManager(
+      $_db,
+      $_db.itineraryDays,
+    ).filter((f) => f.memoryId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_itineraryDaysRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -14063,6 +14931,11 @@ class $$MemoriesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get budgetCurrency => $composableBuilder(
+    column: $table.budgetCurrency,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -14139,6 +15012,31 @@ class $$MemoriesTableFilterComposer
           }) => $$ItineraryItemsTableFilterComposer(
             $db: $db,
             $table: $db.itineraryItems,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> itineraryDaysRefs(
+    Expression<bool> Function($$ItineraryDaysTableFilterComposer f) f,
+  ) {
+    final $$ItineraryDaysTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryDays,
+      getReferencedColumn: (t) => t.memoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryDaysTableFilterComposer(
+            $db: $db,
+            $table: $db.itineraryDays,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -14278,6 +15176,11 @@ class $$MemoriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get budgetCurrency => $composableBuilder(
+    column: $table.budgetCurrency,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14330,6 +15233,11 @@ class $$MemoriesTableAnnotationComposer
 
   GeneratedColumn<double> get budget =>
       $composableBuilder(column: $table.budget, builder: (column) => column);
+
+  GeneratedColumn<String> get budgetCurrency => $composableBuilder(
+    column: $table.budgetCurrency,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -14404,6 +15312,31 @@ class $$MemoriesTableAnnotationComposer
           }) => $$ItineraryItemsTableAnnotationComposer(
             $db: $db,
             $table: $db.itineraryItems,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> itineraryDaysRefs<T extends Object>(
+    Expression<T> Function($$ItineraryDaysTableAnnotationComposer a) f,
+  ) {
+    final $$ItineraryDaysTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryDays,
+      getReferencedColumn: (t) => t.memoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryDaysTableAnnotationComposer(
+            $db: $db,
+            $table: $db.itineraryDays,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -14506,6 +15439,7 @@ class $$MemoriesTableTableManager
             bool memoryParticipantsRefs,
             bool memoryLocationsRefs,
             bool itineraryItemsRefs,
+            bool itineraryDaysRefs,
             bool mediaAssetsRefs,
             bool transactionsRefs,
             bool tagsRefs,
@@ -14533,6 +15467,7 @@ class $$MemoriesTableTableManager
                 Value<DateTime?> endDate = const Value.absent(),
                 Value<String?> locationName = const Value.absent(),
                 Value<double?> budget = const Value.absent(),
+                Value<String?> budgetCurrency = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -14546,6 +15481,7 @@ class $$MemoriesTableTableManager
                 endDate: endDate,
                 locationName: locationName,
                 budget: budget,
+                budgetCurrency: budgetCurrency,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -14561,6 +15497,7 @@ class $$MemoriesTableTableManager
                 Value<DateTime?> endDate = const Value.absent(),
                 Value<String?> locationName = const Value.absent(),
                 Value<double?> budget = const Value.absent(),
+                Value<String?> budgetCurrency = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -14574,6 +15511,7 @@ class $$MemoriesTableTableManager
                 endDate: endDate,
                 locationName: locationName,
                 budget: budget,
+                budgetCurrency: budgetCurrency,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -14591,6 +15529,7 @@ class $$MemoriesTableTableManager
                 memoryParticipantsRefs = false,
                 memoryLocationsRefs = false,
                 itineraryItemsRefs = false,
+                itineraryDaysRefs = false,
                 mediaAssetsRefs = false,
                 transactionsRefs = false,
                 tagsRefs = false,
@@ -14601,6 +15540,7 @@ class $$MemoriesTableTableManager
                     if (memoryParticipantsRefs) db.memoryParticipants,
                     if (memoryLocationsRefs) db.memoryLocations,
                     if (itineraryItemsRefs) db.itineraryItems,
+                    if (itineraryDaysRefs) db.itineraryDays,
                     if (mediaAssetsRefs) db.mediaAssets,
                     if (transactionsRefs) db.transactions,
                     if (tagsRefs) db.tags,
@@ -14665,6 +15605,27 @@ class $$MemoriesTableTableManager
                                 table,
                                 p0,
                               ).itineraryItemsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.memoryId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (itineraryDaysRefs)
+                        await $_getPrefetchedData<
+                          Memory,
+                          $MemoriesTable,
+                          ItineraryDay
+                        >(
+                          currentTable: table,
+                          referencedTable: $$MemoriesTableReferences
+                              ._itineraryDaysRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MemoriesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).itineraryDaysRefs,
                           referencedItemsForCurrentItem:
                               (item, referencedItems) => referencedItems.where(
                                 (e) => e.memoryId == item.id,
@@ -14750,6 +15711,7 @@ typedef $$MemoriesTableProcessedTableManager =
         bool memoryParticipantsRefs,
         bool memoryLocationsRefs,
         bool itineraryItemsRefs,
+        bool itineraryDaysRefs,
         bool mediaAssetsRefs,
         bool transactionsRefs,
         bool tagsRefs,
@@ -15186,6 +16148,27 @@ final class $$MemoryLocationsTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
+
+  static MultiTypedResultKey<$ItineraryStopsTable, List<ItineraryStop>>
+  _itineraryStopsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.itineraryStops,
+    aliasName: $_aliasNameGenerator(
+      db.memoryLocations.id,
+      db.itineraryStops.locationId,
+    ),
+  );
+
+  $$ItineraryStopsTableProcessedTableManager get itineraryStopsRefs {
+    final manager = $$ItineraryStopsTableTableManager(
+      $_db,
+      $_db.itineraryStops,
+    ).filter((f) => f.locationId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_itineraryStopsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$MemoryLocationsTableFilterComposer
@@ -15233,6 +16216,31 @@ class $$MemoryLocationsTableFilterComposer
           ),
     );
     return composer;
+  }
+
+  Expression<bool> itineraryStopsRefs(
+    Expression<bool> Function($$ItineraryStopsTableFilterComposer f) f,
+  ) {
+    final $$ItineraryStopsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryStops,
+      getReferencedColumn: (t) => t.locationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryStopsTableFilterComposer(
+            $db: $db,
+            $table: $db.itineraryStops,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
   }
 }
 
@@ -15324,6 +16332,31 @@ class $$MemoryLocationsTableAnnotationComposer
     );
     return composer;
   }
+
+  Expression<T> itineraryStopsRefs<T extends Object>(
+    Expression<T> Function($$ItineraryStopsTableAnnotationComposer a) f,
+  ) {
+    final $$ItineraryStopsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryStops,
+      getReferencedColumn: (t) => t.locationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryStopsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.itineraryStops,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$MemoryLocationsTableTableManager
@@ -15339,7 +16372,7 @@ class $$MemoryLocationsTableTableManager
           $$MemoryLocationsTableUpdateCompanionBuilder,
           (MemoryLocation, $$MemoryLocationsTableReferences),
           MemoryLocation,
-          PrefetchHooks Function({bool memoryId})
+          PrefetchHooks Function({bool memoryId, bool itineraryStopsRefs})
         > {
   $$MemoryLocationsTableTableManager(
     _$AppDatabase db,
@@ -15390,49 +16423,74 @@ class $$MemoryLocationsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({memoryId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (memoryId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.memoryId,
-                                referencedTable:
-                                    $$MemoryLocationsTableReferences
-                                        ._memoryIdTable(db),
-                                referencedColumn:
-                                    $$MemoryLocationsTableReferences
-                                        ._memoryIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
+          prefetchHooksCallback:
+              ({memoryId = false, itineraryStopsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (itineraryStopsRefs) db.itineraryStops,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (memoryId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.memoryId,
+                                    referencedTable:
+                                        $$MemoryLocationsTableReferences
+                                            ._memoryIdTable(db),
+                                    referencedColumn:
+                                        $$MemoryLocationsTableReferences
+                                            ._memoryIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
 
-                    return state;
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (itineraryStopsRefs)
+                        await $_getPrefetchedData<
+                          MemoryLocation,
+                          $MemoryLocationsTable,
+                          ItineraryStop
+                        >(
+                          currentTable: table,
+                          referencedTable: $$MemoryLocationsTableReferences
+                              ._itineraryStopsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MemoryLocationsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).itineraryStopsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.locationId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
                   },
-              getPrefetchedDataCallback: (items) async {
-                return [];
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -15449,7 +16507,7 @@ typedef $$MemoryLocationsTableProcessedTableManager =
       $$MemoryLocationsTableUpdateCompanionBuilder,
       (MemoryLocation, $$MemoryLocationsTableReferences),
       MemoryLocation,
-      PrefetchHooks Function({bool memoryId})
+      PrefetchHooks Function({bool memoryId, bool itineraryStopsRefs})
     >;
 typedef $$ItineraryItemsTableCreateCompanionBuilder =
     ItineraryItemsCompanion Function({
@@ -15835,6 +16893,868 @@ typedef $$ItineraryItemsTableProcessedTableManager =
       (ItineraryItem, $$ItineraryItemsTableReferences),
       ItineraryItem,
       PrefetchHooks Function({bool memoryId})
+    >;
+typedef $$ItineraryDaysTableCreateCompanionBuilder =
+    ItineraryDaysCompanion Function({
+      required String id,
+      required String memoryId,
+      required int dayNumber,
+      Value<DateTime?> date,
+      Value<String?> dayNote,
+      Value<int> rowid,
+    });
+typedef $$ItineraryDaysTableUpdateCompanionBuilder =
+    ItineraryDaysCompanion Function({
+      Value<String> id,
+      Value<String> memoryId,
+      Value<int> dayNumber,
+      Value<DateTime?> date,
+      Value<String?> dayNote,
+      Value<int> rowid,
+    });
+
+final class $$ItineraryDaysTableReferences
+    extends BaseReferences<_$AppDatabase, $ItineraryDaysTable, ItineraryDay> {
+  $$ItineraryDaysTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $MemoriesTable _memoryIdTable(_$AppDatabase db) =>
+      db.memories.createAlias(
+        $_aliasNameGenerator(db.itineraryDays.memoryId, db.memories.id),
+      );
+
+  $$MemoriesTableProcessedTableManager get memoryId {
+    final $_column = $_itemColumn<String>('memory_id')!;
+
+    final manager = $$MemoriesTableTableManager(
+      $_db,
+      $_db.memories,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_memoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$ItineraryStopsTable, List<ItineraryStop>>
+  _itineraryStopsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.itineraryStops,
+    aliasName: $_aliasNameGenerator(
+      db.itineraryDays.id,
+      db.itineraryStops.dayId,
+    ),
+  );
+
+  $$ItineraryStopsTableProcessedTableManager get itineraryStopsRefs {
+    final manager = $$ItineraryStopsTableTableManager(
+      $_db,
+      $_db.itineraryStops,
+    ).filter((f) => f.dayId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_itineraryStopsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$ItineraryDaysTableFilterComposer
+    extends Composer<_$AppDatabase, $ItineraryDaysTable> {
+  $$ItineraryDaysTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get dayNumber => $composableBuilder(
+    column: $table.dayNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dayNote => $composableBuilder(
+    column: $table.dayNote,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$MemoriesTableFilterComposer get memoryId {
+    final $$MemoriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableFilterComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> itineraryStopsRefs(
+    Expression<bool> Function($$ItineraryStopsTableFilterComposer f) f,
+  ) {
+    final $$ItineraryStopsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryStops,
+      getReferencedColumn: (t) => t.dayId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryStopsTableFilterComposer(
+            $db: $db,
+            $table: $db.itineraryStops,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$ItineraryDaysTableOrderingComposer
+    extends Composer<_$AppDatabase, $ItineraryDaysTable> {
+  $$ItineraryDaysTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get dayNumber => $composableBuilder(
+    column: $table.dayNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dayNote => $composableBuilder(
+    column: $table.dayNote,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$MemoriesTableOrderingComposer get memoryId {
+    final $$MemoriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItineraryDaysTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ItineraryDaysTable> {
+  $$ItineraryDaysTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get dayNumber =>
+      $composableBuilder(column: $table.dayNumber, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<String> get dayNote =>
+      $composableBuilder(column: $table.dayNote, builder: (column) => column);
+
+  $$MemoriesTableAnnotationComposer get memoryId {
+    final $$MemoriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> itineraryStopsRefs<T extends Object>(
+    Expression<T> Function($$ItineraryStopsTableAnnotationComposer a) f,
+  ) {
+    final $$ItineraryStopsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.itineraryStops,
+      getReferencedColumn: (t) => t.dayId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryStopsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.itineraryStops,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$ItineraryDaysTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ItineraryDaysTable,
+          ItineraryDay,
+          $$ItineraryDaysTableFilterComposer,
+          $$ItineraryDaysTableOrderingComposer,
+          $$ItineraryDaysTableAnnotationComposer,
+          $$ItineraryDaysTableCreateCompanionBuilder,
+          $$ItineraryDaysTableUpdateCompanionBuilder,
+          (ItineraryDay, $$ItineraryDaysTableReferences),
+          ItineraryDay,
+          PrefetchHooks Function({bool memoryId, bool itineraryStopsRefs})
+        > {
+  $$ItineraryDaysTableTableManager(_$AppDatabase db, $ItineraryDaysTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItineraryDaysTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItineraryDaysTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItineraryDaysTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> memoryId = const Value.absent(),
+                Value<int> dayNumber = const Value.absent(),
+                Value<DateTime?> date = const Value.absent(),
+                Value<String?> dayNote = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItineraryDaysCompanion(
+                id: id,
+                memoryId: memoryId,
+                dayNumber: dayNumber,
+                date: date,
+                dayNote: dayNote,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String memoryId,
+                required int dayNumber,
+                Value<DateTime?> date = const Value.absent(),
+                Value<String?> dayNote = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItineraryDaysCompanion.insert(
+                id: id,
+                memoryId: memoryId,
+                dayNumber: dayNumber,
+                date: date,
+                dayNote: dayNote,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ItineraryDaysTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({memoryId = false, itineraryStopsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (itineraryStopsRefs) db.itineraryStops,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (memoryId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.memoryId,
+                                    referencedTable:
+                                        $$ItineraryDaysTableReferences
+                                            ._memoryIdTable(db),
+                                    referencedColumn:
+                                        $$ItineraryDaysTableReferences
+                                            ._memoryIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (itineraryStopsRefs)
+                        await $_getPrefetchedData<
+                          ItineraryDay,
+                          $ItineraryDaysTable,
+                          ItineraryStop
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ItineraryDaysTableReferences
+                              ._itineraryStopsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ItineraryDaysTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).itineraryStopsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.dayId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$ItineraryDaysTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ItineraryDaysTable,
+      ItineraryDay,
+      $$ItineraryDaysTableFilterComposer,
+      $$ItineraryDaysTableOrderingComposer,
+      $$ItineraryDaysTableAnnotationComposer,
+      $$ItineraryDaysTableCreateCompanionBuilder,
+      $$ItineraryDaysTableUpdateCompanionBuilder,
+      (ItineraryDay, $$ItineraryDaysTableReferences),
+      ItineraryDay,
+      PrefetchHooks Function({bool memoryId, bool itineraryStopsRefs})
+    >;
+typedef $$ItineraryStopsTableCreateCompanionBuilder =
+    ItineraryStopsCompanion Function({
+      required String id,
+      required String dayId,
+      Value<String?> locationId,
+      required int orderIndex,
+      required String activityText,
+      Value<String?> timeLabel,
+      Value<int> rowid,
+    });
+typedef $$ItineraryStopsTableUpdateCompanionBuilder =
+    ItineraryStopsCompanion Function({
+      Value<String> id,
+      Value<String> dayId,
+      Value<String?> locationId,
+      Value<int> orderIndex,
+      Value<String> activityText,
+      Value<String?> timeLabel,
+      Value<int> rowid,
+    });
+
+final class $$ItineraryStopsTableReferences
+    extends BaseReferences<_$AppDatabase, $ItineraryStopsTable, ItineraryStop> {
+  $$ItineraryStopsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $ItineraryDaysTable _dayIdTable(_$AppDatabase db) =>
+      db.itineraryDays.createAlias(
+        $_aliasNameGenerator(db.itineraryStops.dayId, db.itineraryDays.id),
+      );
+
+  $$ItineraryDaysTableProcessedTableManager get dayId {
+    final $_column = $_itemColumn<String>('day_id')!;
+
+    final manager = $$ItineraryDaysTableTableManager(
+      $_db,
+      $_db.itineraryDays,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_dayIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $MemoryLocationsTable _locationIdTable(_$AppDatabase db) =>
+      db.memoryLocations.createAlias(
+        $_aliasNameGenerator(
+          db.itineraryStops.locationId,
+          db.memoryLocations.id,
+        ),
+      );
+
+  $$MemoryLocationsTableProcessedTableManager? get locationId {
+    final $_column = $_itemColumn<String>('location_id');
+    if ($_column == null) return null;
+    final manager = $$MemoryLocationsTableTableManager(
+      $_db,
+      $_db.memoryLocations,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_locationIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ItineraryStopsTableFilterComposer
+    extends Composer<_$AppDatabase, $ItineraryStopsTable> {
+  $$ItineraryStopsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get activityText => $composableBuilder(
+    column: $table.activityText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get timeLabel => $composableBuilder(
+    column: $table.timeLabel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ItineraryDaysTableFilterComposer get dayId {
+    final $$ItineraryDaysTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.dayId,
+      referencedTable: $db.itineraryDays,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryDaysTableFilterComposer(
+            $db: $db,
+            $table: $db.itineraryDays,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$MemoryLocationsTableFilterComposer get locationId {
+    final $$MemoryLocationsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.locationId,
+      referencedTable: $db.memoryLocations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoryLocationsTableFilterComposer(
+            $db: $db,
+            $table: $db.memoryLocations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItineraryStopsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ItineraryStopsTable> {
+  $$ItineraryStopsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get activityText => $composableBuilder(
+    column: $table.activityText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get timeLabel => $composableBuilder(
+    column: $table.timeLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ItineraryDaysTableOrderingComposer get dayId {
+    final $$ItineraryDaysTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.dayId,
+      referencedTable: $db.itineraryDays,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryDaysTableOrderingComposer(
+            $db: $db,
+            $table: $db.itineraryDays,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$MemoryLocationsTableOrderingComposer get locationId {
+    final $$MemoryLocationsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.locationId,
+      referencedTable: $db.memoryLocations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoryLocationsTableOrderingComposer(
+            $db: $db,
+            $table: $db.memoryLocations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItineraryStopsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ItineraryStopsTable> {
+  $$ItineraryStopsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get activityText => $composableBuilder(
+    column: $table.activityText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get timeLabel =>
+      $composableBuilder(column: $table.timeLabel, builder: (column) => column);
+
+  $$ItineraryDaysTableAnnotationComposer get dayId {
+    final $$ItineraryDaysTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.dayId,
+      referencedTable: $db.itineraryDays,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ItineraryDaysTableAnnotationComposer(
+            $db: $db,
+            $table: $db.itineraryDays,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$MemoryLocationsTableAnnotationComposer get locationId {
+    final $$MemoryLocationsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.locationId,
+      referencedTable: $db.memoryLocations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoryLocationsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memoryLocations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ItineraryStopsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ItineraryStopsTable,
+          ItineraryStop,
+          $$ItineraryStopsTableFilterComposer,
+          $$ItineraryStopsTableOrderingComposer,
+          $$ItineraryStopsTableAnnotationComposer,
+          $$ItineraryStopsTableCreateCompanionBuilder,
+          $$ItineraryStopsTableUpdateCompanionBuilder,
+          (ItineraryStop, $$ItineraryStopsTableReferences),
+          ItineraryStop,
+          PrefetchHooks Function({bool dayId, bool locationId})
+        > {
+  $$ItineraryStopsTableTableManager(
+    _$AppDatabase db,
+    $ItineraryStopsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItineraryStopsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItineraryStopsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItineraryStopsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> dayId = const Value.absent(),
+                Value<String?> locationId = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<String> activityText = const Value.absent(),
+                Value<String?> timeLabel = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItineraryStopsCompanion(
+                id: id,
+                dayId: dayId,
+                locationId: locationId,
+                orderIndex: orderIndex,
+                activityText: activityText,
+                timeLabel: timeLabel,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String dayId,
+                Value<String?> locationId = const Value.absent(),
+                required int orderIndex,
+                required String activityText,
+                Value<String?> timeLabel = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItineraryStopsCompanion.insert(
+                id: id,
+                dayId: dayId,
+                locationId: locationId,
+                orderIndex: orderIndex,
+                activityText: activityText,
+                timeLabel: timeLabel,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ItineraryStopsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({dayId = false, locationId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (dayId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.dayId,
+                                referencedTable: $$ItineraryStopsTableReferences
+                                    ._dayIdTable(db),
+                                referencedColumn:
+                                    $$ItineraryStopsTableReferences
+                                        ._dayIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+                    if (locationId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.locationId,
+                                referencedTable: $$ItineraryStopsTableReferences
+                                    ._locationIdTable(db),
+                                referencedColumn:
+                                    $$ItineraryStopsTableReferences
+                                        ._locationIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ItineraryStopsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ItineraryStopsTable,
+      ItineraryStop,
+      $$ItineraryStopsTableFilterComposer,
+      $$ItineraryStopsTableOrderingComposer,
+      $$ItineraryStopsTableAnnotationComposer,
+      $$ItineraryStopsTableCreateCompanionBuilder,
+      $$ItineraryStopsTableUpdateCompanionBuilder,
+      (ItineraryStop, $$ItineraryStopsTableReferences),
+      ItineraryStop,
+      PrefetchHooks Function({bool dayId, bool locationId})
     >;
 typedef $$MediaAssetsTableCreateCompanionBuilder =
     MediaAssetsCompanion Function({
@@ -19299,6 +21219,10 @@ class $AppDatabaseManager {
       $$MemoryLocationsTableTableManager(_db, _db.memoryLocations);
   $$ItineraryItemsTableTableManager get itineraryItems =>
       $$ItineraryItemsTableTableManager(_db, _db.itineraryItems);
+  $$ItineraryDaysTableTableManager get itineraryDays =>
+      $$ItineraryDaysTableTableManager(_db, _db.itineraryDays);
+  $$ItineraryStopsTableTableManager get itineraryStops =>
+      $$ItineraryStopsTableTableManager(_db, _db.itineraryStops);
   $$MediaAssetsTableTableManager get mediaAssets =>
       $$MediaAssetsTableTableManager(_db, _db.mediaAssets);
   $$WalletsTableTableManager get wallets =>

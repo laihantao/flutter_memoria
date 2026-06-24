@@ -31,6 +31,7 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   String _type = '旅行';
   DateTime? _startDate;
   DateTime? _endDate;
+  String _budgetCurrency = 'SGD';
   final Set<String> _participantIds = {};
   List<String> _locations = [];
   bool _loading = true;
@@ -56,6 +57,9 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
         _endDate = memory.endDate;
         if (memory.budget != null) {
           _budgetCtrl.text = _formatBudget(memory.budget!);
+        }
+        if (memory.budgetCurrency != null) {
+          _budgetCurrency = memory.budgetCurrency!;
         }
       }
       final participants = await ref
@@ -151,6 +155,7 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
             startDate: _startDate!,
             endDate: _endDate,
             budget: budget,
+            budgetCurrency: budget != null ? _budgetCurrency : null,
             locationNames: _locations,
             participantIds: _participantIds.toList(),
           );
@@ -265,33 +270,54 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _budgetCtrl,
-                decoration: InputDecoration(
-                  labelText: l10n.memoryBudgetLabel,
-                  prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
-                  hintText: '0.00',
-                ),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  // Allow digits and at most one decimal point.
-                  // Detailed format (two decimals max) is enforced by the validator.
-                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _budgetCtrl,
+                      decoration: InputDecoration(
+                        labelText: l10n.memoryBudgetLabel,
+                        prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+                        hintText: '0.00',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                      ],
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return null;
+                        final trimmed = v.trim();
+                        final dotCount = trimmed.split('').where((c) => c == '.').length;
+                        if (dotCount > 1) return l10n.memoryBudgetInvalid;
+                        final decimalIdx = trimmed.indexOf('.');
+                        if (decimalIdx != -1 && trimmed.length - decimalIdx - 1 > 2) {
+                          return l10n.memoryBudgetInvalid;
+                        }
+                        final val = double.tryParse(trimmed);
+                        if (val == null || val < 0) return l10n.memoryBudgetInvalid;
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'SGD', label: Text('SGD')),
+                        ButtonSegment(value: 'MYR', label: Text('RM')),
+                      ],
+                      selected: {_budgetCurrency},
+                      onSelectionChanged: (s) =>
+                          setState(() => _budgetCurrency = s.first),
+                      style: ButtonStyle(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
                 ],
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  final trimmed = v.trim();
-                  // Reject if more than one decimal point or more than 2 decimal places
-                  final dotCount = trimmed.split('').where((c) => c == '.').length;
-                  if (dotCount > 1) return l10n.memoryBudgetInvalid;
-                  final decimalIdx = trimmed.indexOf('.');
-                  if (decimalIdx != -1 && trimmed.length - decimalIdx - 1 > 2) {
-                    return l10n.memoryBudgetInvalid;
-                  }
-                  final val = double.tryParse(trimmed);
-                  if (val == null || val < 0) return l10n.memoryBudgetInvalid;
-                  return null;
-                },
               ),
               const SizedBox(height: 12),
               _LocationsEditor(

@@ -422,7 +422,7 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                     ),
                     _ItineraryTab(memoryId: widget.id, memory: memory),
                     _GalleryTab(memoryId: widget.id),
-                    _ExpensesTab(memoryId: widget.id, budget: memory.budget),
+                    _ExpensesTab(memoryId: widget.id, budget: memory.budget, budgetCurrency: memory.budgetCurrency),
                     _SettingsTab(
               onExport: () => _exportPdf(memory),
               onDelete: () => _deleteMemory(memory),
@@ -1143,68 +1143,73 @@ class _OverviewTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final assetsAsync = ref.watch(mediaAssetsProvider(memoryId));
-    final itineraryAsync = ref.watch(itineraryProvider(memoryId));
+    final allStopsAsync = ref.watch(allItineraryStopsProvider(memoryId));
+    final itineraryDaysAsync = ref.watch(itineraryDaysProvider(memoryId));
     final txAsync = ref.watch(transactionsByMemoryProvider(memoryId));
     final locationsAsync = ref.watch(memoryLocationsProvider(memoryId));
 
+    final days = itineraryDaysAsync.value ?? [];
+    final allStops = allStopsAsync.value ?? [];
+    final locations = locationsAsync.value ?? [];
+
     return NotificationListener<OverscrollNotification>(
       onNotification: (n) {
-        // Negative overscroll = user pulling up while already at top
         if (n.overscroll < 0) onTopOverscroll?.call();
         return false;
       },
       child: SingleChildScrollView(
-      controller: scrollController,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 14),
-          // Stat cards
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _QuickStatsRow(
-              photoCount: assetsAsync.value?.length ?? 0,
-              itineraryCount: itineraryAsync.value?.length ?? 0,
-              txns: txAsync.value ?? [],
-              budget: memory.budget,
-              onPhotosTap: () => onTabNavigate(2),
-              onItineraryTap: () => onTabNavigate(1),
-              onExpensesTap: () => onTabNavigate(3),
-            ),
-          ),
-
-          // Description QuoteBar
-          if (memory.description != null &&
-              memory.description!.isNotEmpty) ...[
+        controller: scrollController,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             const SizedBox(height: 14),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SectionLabel('描述'),
-                  const SizedBox(height: 6),
-                  _QuoteBar(text: memory.description!),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _QuickStatsRow(
+                photoCount: assetsAsync.value?.length ?? 0,
+                itineraryCount: allStops.length,
+                txns: txAsync.value ?? [],
+                budget: memory.budget,
+                budgetCurrency: memory.budgetCurrency,
+                onPhotosTap: () => onTabNavigate(2),
+                onItineraryTap: () => onTabNavigate(1),
+                onExpensesTap: () => onTabNavigate(3),
               ),
             ),
+
+            if (memory.description != null &&
+                memory.description!.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionLabel('描述'),
+                    const SizedBox(height: 6),
+                    _QuoteBar(text: memory.description!),
+                  ],
+                ),
+              ),
+            ],
+
+            // Itinerary days section (new) — or fallback to location pool
+            if (days.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _ItineraryDaysSection(
+                days: days,
+                allStops: allStops,
+                locations: locations,
+                onTap: () => onTabNavigate(1),
+              ),
+            ] else if (locations.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _LocationsSection(locations: locations),
+            ],
+
+            const SizedBox(height: 20),
           ],
-
-          // Location horizontal scroll
-          locationsAsync.when(
-            data: (locations) => locations.isEmpty
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: _LocationsSection(locations: locations),
-                  ),
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
-          ),
-
-          const SizedBox(height: 20),
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -1217,6 +1222,7 @@ class _QuickStatsRow extends StatelessWidget {
   final int itineraryCount;
   final List<Transaction> txns;
   final double? budget;
+  final String? budgetCurrency;
   final VoidCallback onPhotosTap;
   final VoidCallback onItineraryTap;
   final VoidCallback onExpensesTap;
@@ -1226,6 +1232,7 @@ class _QuickStatsRow extends StatelessWidget {
     required this.itineraryCount,
     required this.txns,
     required this.budget,
+    this.budgetCurrency,
     required this.onPhotosTap,
     required this.onItineraryTap,
     required this.onExpensesTap,
@@ -1241,7 +1248,14 @@ class _QuickStatsRow extends StatelessWidget {
     return _formatAmt(total, _currencySym(txns));
   }
 
-  String get _budgetLabel => _formatAmt(budget!, _currencySym(txns));
+  String _budgetSym() {
+    if (budgetCurrency != null) {
+      return const {'MYR': 'RM', 'SGD': 'S\$'}[budgetCurrency] ?? budgetCurrency!;
+    }
+    return _currencySym(txns);
+  }
+
+  String get _budgetLabel => _formatAmt(budget!, _budgetSym());
 
   @override
   Widget build(BuildContext context) {
@@ -1852,7 +1866,7 @@ class _ParticipantPickerSheet extends ConsumerWidget {
   }
 }
 
-// ── Itinerary Tab ──────────────────────────────────────────────────────────────
+// ── Itinerary Tab (day-structured) ─────────────────────────────────────────────
 
 class _ItineraryTab extends ConsumerStatefulWidget {
   final String memoryId;
@@ -1864,472 +1878,121 @@ class _ItineraryTab extends ConsumerStatefulWidget {
 }
 
 class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
-  final _titleCtrl = TextEditingController();
-  DateTime? _itemDate;
-  TimeOfDay? _itemTime;
-  ItineraryItem? _editingItem;
-  bool _groupByDate = false;
-
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    super.dispose();
-  }
-
-  String? get _itemTimeStr {
-    if (_itemTime == null) return null;
-    final h = _itemTime!.hour.toString().padLeft(2, '0');
-    final m = _itemTime!.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  void _startEdit(ItineraryItem item) {
-    _titleCtrl.text = item.title;
-    setState(() {
-      _editingItem = item;
-      _itemDate = item.itemDate;
-      _itemTime = _parseTime(item.itemTime);
-    });
-  }
-
-  void _cancelEdit() {
-    _titleCtrl.clear();
-    setState(() {
-      _editingItem = null;
-      _itemDate = null;
-      _itemTime = null;
-    });
-  }
-
-  TimeOfDay? _parseTime(String? timeStr) {
-    if (timeStr == null) return null;
-    final parts = timeStr.split(':');
-    if (parts.length != 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return null;
-    return TimeOfDay(hour: h, minute: m);
-  }
-
-  Future<void> _saveOrUpdate() async {
-    if (_titleCtrl.text.trim().isEmpty || _itemDate == null) return;
-    final notifier = ref.read(memoryNotifierProvider.notifier);
-    try {
-      if (_editingItem != null) {
-        await notifier.updateItineraryItem(ItineraryItem(
-          id: _editingItem!.id,
-          memoryId: _editingItem!.memoryId,
-          itemDate: _itemDate!,
-          itemTime: _itemTimeStr,
-          title: _titleCtrl.text.trim(),
-          locationName: _editingItem!.locationName,
-          notes: _editingItem!.notes,
-          sortOrder: _editingItem!.sortOrder,
-        ));
-      } else {
-        await notifier.addItineraryItem(
-          memoryId: widget.memoryId,
-          itemDate: _itemDate!,
-          itemTime: _itemTimeStr,
-          title: _titleCtrl.text.trim(),
+  Future<void> _addDay() async {
+    await ref
+        .read(memoryNotifierProvider.notifier)
+        .addItineraryDayWithAutoNumber(
+          widget.memoryId,
+          startDate: widget.memory.startDate,
+          endDate: widget.memory.endDate,
         );
-      }
-      _titleCtrl.clear();
-      setState(() {
-        _editingItem = null;
-        _itemDate = null;
-        _itemTime = null;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.savedSuccess),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.errorWith('$e'))),
-        );
-      }
-    }
-  }
-
-  Future<bool?> _confirmDelete(BuildContext ctx) {
-    final l10n = ctx.l10n;
-    return showDialog<bool>(
-      context: ctx,
-      builder: (dCtx) => AlertDialog(
-        title: Text(l10n.delete),
-        content: Text(l10n.memoryDeleteItineraryConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx, true),
-            child: Text(l10n.delete,
-                style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _deleteItem(ItineraryItem item) async {
-    final confirmed = await _confirmDelete(context);
-    if (confirmed != true) return;
-    if (_editingItem?.id == item.id) _cancelEdit();
-    try {
-      await ref
-          .read(memoryNotifierProvider.notifier)
-          .deleteItineraryItem(item.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.deletedSuccess),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.errorWith('$e'))),
-        );
-      }
-    }
-  }
-
-  Widget _buildDismissible(ItineraryItem item) {
-    return Dismissible(
-      key: Key('it_${item.id}'),
-      direction: DismissDirection.startToEnd,
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.red.shade400,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 20),
-        child:
-            const Icon(Icons.delete_outline, color: Colors.white, size: 24),
-      ),
-      confirmDismiss: (_) => _confirmDelete(context),
-      onDismissed: (_) async {
-        if (_editingItem?.id == item.id) _cancelEdit();
-        try {
-          await ref
-              .read(memoryNotifierProvider.notifier)
-              .deleteItineraryItem(item.id);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(context.l10n.deletedSuccess),
-                duration: const Duration(seconds: 2),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(context.l10n.errorWith('$e'))),
-            );
-          }
-        }
-      },
-      child: _ItineraryCard(
-        item: item,
-        onEdit: () => _startEdit(item),
-        isEditing: _editingItem?.id == item.id,
-      ),
-    );
-  }
-
-  Widget _buildFlatList(List<ItineraryItem> items) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      itemCount: items.length,
-      itemBuilder: (context, i) => _buildDismissible(items[i]),
-    );
-  }
-
-  Widget _buildGroupedList(List<ItineraryItem> items) {
-    final grouped = <String, List<ItineraryItem>>{};
-    for (final item in items) {
-      final key =
-          '${item.itemDate.year}-${item.itemDate.month.toString().padLeft(2, '0')}-${item.itemDate.day.toString().padLeft(2, '0')}';
-      grouped.putIfAbsent(key, () => []).add(item);
-    }
-    final sortedKeys = grouped.keys.toList()..sort();
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      itemCount: sortedKeys.length,
-      itemBuilder: (context, i) {
-        final dateItems = grouped[sortedKeys[i]]!;
-        return _DateGroup(
-          date: dateItems.first.itemDate,
-          items: dateItems,
-          editingItemId: _editingItem?.id,
-          onEdit: _startEdit,
-          onDelete: _deleteItem,
-        );
-      },
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final itineraryAsync = ref.watch(itineraryProvider(widget.memoryId));
-    final isEditing = _editingItem != null;
+    final daysAsync = ref.watch(itineraryDaysProvider(widget.memoryId));
+    final primary =
+        Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final bg =
+        Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final border =
+        Theme.of(context).extension<AppThemeExtension>()!.borderColor;
+    final textMuted =
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
 
-    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
-    final primaryDeep =
-        Color.lerp(Theme.of(context).extension<AppThemeExtension>()!.accentColor, Colors.black, 0.2)!;
-    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
-    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
-    final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
-    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final currentDays = daysAsync.valueOrNull ?? [];
+    final endDate = widget.memory.endDate;
+    final maxDays = endDate != null
+        ? endDate.difference(widget.memory.startDate).inDays + 1
+        : null;
+    final atMax = maxDays != null && currentDays.length >= maxDays;
 
     return Column(
       children: [
         Expanded(
-          child: itineraryAsync.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
-            error: (e, _) =>
-                Center(child: Text(l10n.errorWith('$e'))),
-            data: (items) {
-              if (items.isEmpty) {
-                return Center(child: Text(l10n.memoryNoItinerary));
-              }
-              return Column(
-                children: [
-                  // Single view-toggle button
-                  Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        GestureDetector(
-                          onTap: () => setState(
-                              () => _groupByDate = !_groupByDate),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: primary,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              _groupByDate ? '≡ 列表' : '日 按日期分组',
-                              style: GoogleFonts.notoSansSc(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
+          child: daysAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text(l10n.errorWith('$e'))),
+            data: (days) {
+              if (days.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l10n.memoryNoItinerary,
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 14, color: textMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _addDay,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('添加第一天'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: _groupByDate
-                        ? _buildGroupedList(items)
-                        : _buildFlatList(items),
-                  ),
-                ],
+                );
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                itemCount: days.length,
+                itemBuilder: (context, i) => _DaySection(
+                  day: days[i],
+                  dayNumber: i + 1,
+                  memoryId: widget.memoryId,
+                ),
               );
             },
           ),
         ),
-        // Bottom add / edit form
+        // Bottom bar
         Container(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+          padding: EdgeInsets.fromLTRB(
+              20, 12, 20, 12 + MediaQuery.of(context).padding.bottom),
           decoration: BoxDecoration(
-            color: isEditing
-                ? primary.withValues(alpha: 0.04)
-                : bg,
-            border: Border(
-              top: BorderSide(
-                color: isEditing ? primary : border,
-                width: isEditing ? 1.5 : 1,
+            color: bg,
+            border: Border(top: BorderSide(color: border, width: 1)),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: Opacity(
+              opacity: atMax ? 0.4 : 1.0,
+              child: GestureDetector(
+                onTap: atMax ? null : _addDay,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add, size: 16, color: primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        '添加新一天',
+                        style: GoogleFonts.notoSansSc(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    isEditing
-                        ? l10n.memoryEditItinerary
-                        : l10n.memoryAddItinerary,
-                    style: GoogleFonts.notoSansSc(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: isEditing ? primary : textColor,
-                    ),
-                  ),
-                  if (isEditing) ...[
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: _cancelEdit,
-                      child: Text(
-                        l10n.cancel,
-                        style: GoogleFonts.notoSansSc(
-                            fontSize: 13, color: primary),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 15, vertical: 13),
-                child: TextField(
-                  controller: _titleCtrl,
-                  style: GoogleFonts.notoSansSc(
-                      fontSize: 14, color: textColor),
-                  decoration: InputDecoration.collapsed(
-                    hintText: l10n.memoryActivityHint,
-                    hintStyle: GoogleFonts.notoSansSc(
-                        fontSize: 14,
-                        color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 11),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        final memory = widget.memory;
-                        final firstDate = memory.startDate;
-                        final lastDate =
-                            memory.endDate ?? memory.startDate;
-                        final defaultDate =
-                            _itemDate ?? memory.startDate;
-                        final clamped =
-                            defaultDate.isBefore(firstDate)
-                                ? firstDate
-                                : defaultDate.isAfter(lastDate)
-                                    ? lastDate
-                                    : defaultDate;
-                        final d = await showDatePicker(
-                          context: context,
-                          initialDate: clamped,
-                          firstDate: firstDate,
-                          lastDate: lastDate,
-                        );
-                        if (d != null) setState(() => _itemDate = d);
-                      },
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 11),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: primary, width: 1.5),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _itemDate == null
-                                ? '📅 ${l10n.memoryDateLabel}'
-                                : '📅 ${_itemDate!.day}/${_itemDate!.month}',
-                            style: GoogleFonts.notoSansSc(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        final t = await showTimePicker(
-                          context: context,
-                          initialTime: _itemTime ?? TimeOfDay.now(),
-                        );
-                        if (t != null) setState(() => _itemTime = t);
-                      },
-                      child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 11),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: primary, width: 1.5),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _itemTime == null
-                                ? '🕘 ${l10n.memoryTimeLabel}'
-                                : '🕘 ${_itemTime!.format(context)}',
-                            style: GoogleFonts.notoSansSc(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: _saveOrUpdate,
-                    child: Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: primary,
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                primaryDeep.withValues(alpha: 0.5),
-                            offset: const Offset(0, 6),
-                            blurRadius: 16,
-                            spreadRadius: -6,
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          isEditing
-                              ? Icons.check_rounded
-                              : Icons.add_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ),
         ),
       ],
@@ -2337,131 +2000,739 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
   }
 }
 
+// ── Day section ────────────────────────────────────────────────────────────────
 
+class _DaySection extends ConsumerStatefulWidget {
+  final ItineraryDay day;
+  final int dayNumber;
+  final String memoryId;
+  const _DaySection(
+      {required this.day, required this.dayNumber, required this.memoryId});
 
-// ── Itinerary card ─────────────────────────────────────────────────────────────
+  @override
+  ConsumerState<_DaySection> createState() => _DaySectionState();
+}
 
-class _ItineraryCard extends StatelessWidget {
-  final ItineraryItem item;
+class _DaySectionState extends ConsumerState<_DaySection> {
+  List<ItineraryStop> _sortByTime(List<ItineraryStop> stops) {
+    final result = List<ItineraryStop>.from(stops);
+    result.sort((a, b) {
+      if (a.timeLabel != null && b.timeLabel != null) {
+        return a.timeLabel!.compareTo(b.timeLabel!);
+      }
+      if (a.timeLabel != null) return -1;
+      if (b.timeLabel != null) return 1;
+      return a.orderIndex.compareTo(b.orderIndex);
+    });
+    return result;
+  }
+
+  Future<void> _addStop() async {
+    final stops =
+        await ref.read(databaseProvider).memoryDao.getItineraryStops(widget.day.id);
+    final nextOrder = stops.isEmpty
+        ? 0
+        : stops.map((s) => s.orderIndex).reduce((a, b) => a > b ? a : b) + 1;
+    final locations =
+        await ref.read(databaseProvider).memoryDao.getLocations(widget.memoryId);
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _StopEditorSheet(
+        memoryId: widget.memoryId,
+        dayId: widget.day.id,
+        locations: locations,
+        nextOrder: nextOrder,
+      ),
+    );
+  }
+
+  Future<void> _editStop(ItineraryStop stop) async {
+    final locations =
+        await ref.read(databaseProvider).memoryDao.getLocations(widget.memoryId);
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _StopEditorSheet(
+        memoryId: widget.memoryId,
+        dayId: widget.day.id,
+        locations: locations,
+        nextOrder: stop.orderIndex,
+        editingStop: stop,
+      ),
+    );
+  }
+
+  Future<void> _deleteStop(ItineraryStop stop) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除站点'),
+        content: const Text('确定要删除这个站点吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text('删除', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(memoryNotifierProvider.notifier).deleteItineraryStop(stop.id);
+  }
+
+  Future<void> _deleteDay() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除这一天'),
+        content: const Text('删除后，这天的所有站点也会一并删除。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text('删除', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref
+        .read(memoryNotifierProvider.notifier)
+        .deleteItineraryDay(widget.day.id);
+  }
+
+  Future<void> _onReorder(int oldIdx, int newIdx) async {
+    final rawStops = ref.read(itineraryStopsProvider(widget.day.id)).value ?? [];
+    if (rawStops.isEmpty) return;
+    final list = _sortByTime(rawStops);
+    final item = list.removeAt(oldIdx);
+    list.insert(newIdx, item);
+    await ref
+        .read(memoryNotifierProvider.notifier)
+        .reorderItineraryStops(widget.day.id, list.map((s) => s.id).toList());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stopsAsync = ref.watch(itineraryStopsProvider(widget.day.id));
+    final locationsAsync = ref.watch(memoryLocationsProvider(widget.memoryId));
+    final locationMap = {
+      for (final l in locationsAsync.value ?? <MemoryLocation>[]) l.id: l
+    };
+
+    final primary =
+        Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted =
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final surface =
+        Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+
+    final dayLabel = '第${_ordinalChinese(widget.dayNumber)}天';
+    final dateLabel = widget.day.date != null
+        ? ' · ${DateFormat('M月d日').format(widget.day.date!)}'
+        : '';
+
+    final stops = _sortByTime(stopsAsync.value ?? []);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Day header
+          Row(
+            children: [
+              Text(
+                '$dayLabel$dateLabel',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _deleteDay,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Text('🗑', style: const TextStyle(fontSize: 14)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Day note (if any)
+          if (widget.day.dayNote?.isNotEmpty ?? false) ...[
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: surface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                widget.day.dayNote!,
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 12, color: textMuted),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Stop list
+          if (stops.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                '暂无站点，点击下方添加',
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 12, color: textMuted),
+              ),
+            )
+          else
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: stops.length,
+              onReorderItem: (oldIdx, newIdx) => _onReorder(oldIdx, newIdx),
+              itemBuilder: (context, i) {
+                final stop = stops[i];
+                return _StopRow(
+                  key: Key('stop_${stop.id}'),
+                  stop: stop,
+                  stopIndex: i,
+                  location: stop.locationId != null
+                      ? locationMap[stop.locationId]
+                      : null,
+                  onEdit: () => _editStop(stop),
+                  onDelete: () => _deleteStop(stop),
+                );
+              },
+            ),
+
+          // Add stop button
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: _addStop,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add_circle_outline, size: 16, color: primary),
+                const SizedBox(width: 4),
+                Text(
+                  '添加站点',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stop row (in day section) ──────────────────────────────────────────────────
+
+class _StopRow extends StatelessWidget {
+  final ItineraryStop stop;
+  final int stopIndex;
+  final MemoryLocation? location;
   final VoidCallback onEdit;
-  final bool isEditing;
-  const _ItineraryCard({
-    required this.item,
+  final VoidCallback onDelete;
+
+  const _StopRow({
+    super.key,
+    required this.stop,
+    required this.stopIndex,
+    this.location,
     required this.onEdit,
-    this.isEditing = false,
+    required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
-    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
-    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final primary =
+        Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted =
         Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
-    final dividerColor = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
-    final l10n = context.l10n;
+    final surface =
+        Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isEditing ? primary.withValues(alpha: 0.06) : surface,
-        borderRadius: BorderRadius.circular(14),
-        border: isEditing
-            ? Border.all(color: primary, width: 1.5)
-            : null,
+        color: surface,
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF78461E).withValues(alpha: 0.28),
-            offset: const Offset(0, 3),
-            blurRadius: 10,
-            spreadRadius: -8,
+            color: const Color(0xFF78461E).withValues(alpha: 0.18),
+            offset: const Offset(0, 2),
+            blurRadius: 8,
+            spreadRadius: -6,
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 46,
+      child: Row(
+        children: [
+          // Drag handle
+          ReorderableDragStartListener(
+            index: stopIndex,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              child: Icon(Icons.drag_handle,
+                  color: Color(0xFFCDBFAE), size: 18),
+            ),
+          ),
+          // Content
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    l10n.formatMonthDay(item.itemDate),
-                    style: GoogleFonts.notoSansSc(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: primary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    softWrap: false,
-                  ),
-                  if (item.itemTime != null)
-                    Text(
-                      item.itemTime!,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: textMuted,
+                  if (location != null)
+                    GestureDetector(
+                      onTap: () async {
+                        final uri = Uri.parse(
+                            'https://maps.google.com/?q=${Uri.encodeComponent(location!.name)}');
+                        await launchUrl(uri,
+                            mode: LaunchMode.externalApplication);
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('📍 ',
+                              style: TextStyle(fontSize: 11)),
+                          Expanded(
+                            child: Text(
+                              location!.name,
+                              style: GoogleFonts.notoSansSc(
+                                  fontSize: 11,
+                                  color: primary,
+                                  fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              width: 1.5,
-              height: item.itemTime != null ? 30 : 18,
-              decoration: BoxDecoration(
-                color: dividerColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
                   Text(
-                    item.title,
+                    stop.activityText,
                     style: GoogleFonts.notoSansSc(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isEditing ? primary : textColor,
+                      color: textColor,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (item.locationName != null)
+                  if (stop.timeLabel != null)
                     Text(
-                      '📍 ${item.locationName}',
+                      '🕘 ${stop.timeLabel}',
                       style: GoogleFonts.notoSansSc(
-                          fontSize: 10, color: textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                          fontSize: 11, color: textMuted),
                     ),
                 ],
               ),
             ),
-            GestureDetector(
-              onTap: onEdit,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Text(
-                  '✎',
+          ),
+          GestureDetector(
+            onTap: onEdit,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('✎',
                   style: TextStyle(
-                    fontSize: 16,
-                    color: isEditing
-                        ? primary
-                        : const Color(0xFFCDBFAE),
-                  ),
+                      fontSize: 16, color: Color(0xFFCDBFAE))),
+            ),
+          ),
+          GestureDetector(
+            onTap: onDelete,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('🗑', style: TextStyle(fontSize: 14)),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Stop editor bottom sheet ───────────────────────────────────────────────────
+
+class _StopEditorSheet extends ConsumerStatefulWidget {
+  final String memoryId;
+  final String dayId;
+  final List<MemoryLocation> locations;
+  final int nextOrder;
+  final ItineraryStop? editingStop;
+
+  const _StopEditorSheet({
+    required this.memoryId,
+    required this.dayId,
+    required this.locations,
+    required this.nextOrder,
+    this.editingStop,
+  });
+
+  @override
+  ConsumerState<_StopEditorSheet> createState() => _StopEditorSheetState();
+}
+
+class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
+  final _activityCtrl = TextEditingController();
+  late List<MemoryLocation> _locations;
+  String? _selectedLocationId;
+  String? _timeLabel;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _locations = List.from(widget.locations);
+    if (widget.editingStop != null) {
+      _activityCtrl.text = widget.editingStop!.activityText;
+      _selectedLocationId = widget.editingStop!.locationId;
+      _timeLabel = widget.editingStop!.timeLabel;
+    }
+  }
+
+  @override
+  void dispose() {
+    _activityCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    TimeOfDay? initial;
+    if (_timeLabel != null) {
+      final parts = _timeLabel!.split(':');
+      if (parts.length == 2) {
+        final h = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        if (h != null && m != null) initial = TimeOfDay(hour: h, minute: m);
+      }
+    }
+    final t = await showTimePicker(
+      context: context,
+      initialTime: initial ?? TimeOfDay.now(),
+    );
+    if (t != null && mounted) {
+      setState(() => _timeLabel =
+          '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
+    }
+  }
+
+  Future<void> _showLocationPicker() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('选择地点'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                leading:
+                    const Text('📝', style: TextStyle(fontSize: 18)),
+                title: const Text('无地点'),
+                selected: _selectedLocationId == null,
+                onTap: () => Navigator.pop(ctx, ''),
+              ),
+              ..._locations.map((loc) => ListTile(
+                    leading: const Text('📍',
+                        style: TextStyle(fontSize: 18)),
+                    title: Text(loc.name),
+                    selected: loc.id == _selectedLocationId,
+                    onTap: () => Navigator.pop(ctx, loc.id),
+                  )),
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: const Text('添加新地点'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _promptAddNewLocation();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedLocationId = picked.isEmpty ? null : picked);
+  }
+
+  Future<void> _promptAddNewLocation() async {
+    String name = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (nameCtx) => AlertDialog(
+        title: const Text('添加新地点'),
+        content: TextField(
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '地点名称'),
+          onChanged: (v) => name = v,
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(nameCtx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(nameCtx, true),
+              child: const Text('添加')),
+        ],
+      ),
+    );
+    if (ok != true || name.trim().isEmpty || !mounted) return;
+    final id = await ref
+        .read(memoryNotifierProvider.notifier)
+        .addMemoryLocation(widget.memoryId, name.trim());
+    final updated =
+        await ref.read(databaseProvider).memoryDao.getLocations(widget.memoryId);
+    if (!mounted) return;
+    setState(() {
+      _locations = updated;
+      _selectedLocationId = id;
+    });
+  }
+
+  Future<void> _save() async {
+    final activity = _activityCtrl.text.trim();
+    if (activity.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      final notifier = ref.read(memoryNotifierProvider.notifier);
+      if (widget.editingStop != null) {
+        await notifier.updateItineraryStop(ItineraryStop(
+          id: widget.editingStop!.id,
+          dayId: widget.editingStop!.dayId,
+          locationId: _selectedLocationId,
+          orderIndex: widget.editingStop!.orderIndex,
+          activityText: activity,
+          timeLabel: _timeLabel,
+        ));
+      } else {
+        await notifier.addItineraryStop(
+          dayId: widget.dayId,
+          locationId: _selectedLocationId,
+          orderIndex: widget.nextOrder,
+          activityText: activity,
+          timeLabel: _timeLabel,
+        );
+      }
+      if (mounted) Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary =
+        Theme.of(context).extension<AppThemeExtension>()!.accentColor;
+    final bg =
+        Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
+    final surface =
+        Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted =
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+
+    final isEditing = widget.editingStop != null;
+    final selectedLocation =
+        _locations.where((l) => l.id == _selectedLocationId).firstOrNull;
+
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        color: bg,
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: textMuted.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
+            ),
+            Row(
+              children: [
+                Text(
+                  isEditing ? '编辑站点' : '添加站点',
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: textColor),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Text('取消',
+                      style: GoogleFonts.notoSansSc(
+                          fontSize: 13, color: primary)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Location picker
+            GestureDetector(
+              onTap: _showLocationPicker,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      selectedLocation != null ? '📍' : '📝',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        selectedLocation?.name ?? '选择地点（可选）',
+                        style: GoogleFonts.notoSansSc(
+                          fontSize: 14,
+                          color: selectedLocation != null
+                              ? textColor
+                              : textMuted,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        color: textMuted, size: 18),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Activity text
+            Container(
+              decoration: BoxDecoration(
+                color: surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 12),
+              child: TextField(
+                controller: _activityCtrl,
+                autofocus: widget.editingStop == null,
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 14, color: textColor),
+                decoration: InputDecoration.collapsed(
+                  hintText: '活动内容（去哪儿，做什么）',
+                  hintStyle: GoogleFonts.notoSansSc(
+                      fontSize: 14, color: textMuted),
+                ),
+                maxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Time + save row
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _pickTime,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: surface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _timeLabel == null
+                              ? '🕘 时间（可选）'
+                              : '🕘 $_timeLabel',
+                          style: GoogleFonts.notoSansSc(
+                            fontSize: 14,
+                            color:
+                                _timeLabel != null ? primary : textMuted,
+                            fontWeight: _timeLabel != null
+                                ? FontWeight.w700
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (_timeLabel != null) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => setState(() => _timeLabel = null),
+                    child: Icon(Icons.close, size: 16, color: textMuted),
+                  ),
+                ],
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _saving ? null : _save,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: primary,
+                    ),
+                    child: Center(
+                      child: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white))
+                          : Icon(
+                              isEditing
+                                  ? Icons.check_rounded
+                                  : Icons.add_rounded,
+                              color: Colors.white,
+                              size: 24),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -2470,177 +2741,318 @@ class _ItineraryCard extends StatelessWidget {
   }
 }
 
-// ── Date group card (timeline / grouped view) ─────────────────────────────────
+// ── Chinese ordinal helper ─────────────────────────────────────────────────────
 
-class _DateGroup extends StatelessWidget {
-  final DateTime date;
-  final List<ItineraryItem> items;
-  final String? editingItemId;
-  final void Function(ItineraryItem) onEdit;
-  final void Function(ItineraryItem) onDelete;
+String _ordinalChinese(int n) {
+  const nums = [
+    '一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
+    '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
+  ];
+  if (n >= 1 && n <= nums.length) return nums[n - 1];
+  return '$n';
+}
 
-  const _DateGroup({
-    required this.date,
-    required this.items,
-    required this.onEdit,
-    required this.onDelete,
-    this.editingItemId,
+// ── Itinerary days section (overview) ─────────────────────────────────────────
+
+class _ItineraryDaysSection extends StatelessWidget {
+  final List<ItineraryDay> days;
+  final List<ItineraryStop> allStops;
+  final List<MemoryLocation> locations;
+  final VoidCallback onTap;
+
+  const _ItineraryDaysSection({
+    required this.days,
+    required this.allStops,
+    required this.locations,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
-    final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
-    final textColor = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted =
         Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
-    final divider = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
-    final l10n = context.l10n;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final locationMap = {for (final l in locations) l.id: l};
+    final stopsByDay = <String, List<ItineraryStop>>{};
+    for (final stop in allStops) {
+      stopsByDay.putIfAbsent(stop.dayId, () => []).add(stop);
+    }
+    final multiDay = days.length > 1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '行程站点',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                multiDay
+                    ? '· ${days.length} 天 · ${allStops.length} 站'
+                    : '· ${allStops.length} 站',
+                style:
+                    GoogleFonts.notoSansSc(fontSize: 12, color: textMuted),
+              ),
+            ],
+          ),
+        ),
+        if (multiDay)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: days.asMap().entries.map((e) {
+              final day = e.value;
+              final dayStops = stopsByDay[day.id] ?? [];
+              return _DayStopsRow(
+                day: day,
+                dayNumber: e.key + 1,
+                dayStops: dayStops,
+                locationMap: locationMap,
+                multiDay: true,
+                isDark: isDark,
+                onTap: onTap,
+              );
+            }).toList(),
+          )
+        else if (days.isNotEmpty)
+          _DayStopsRow(
+            day: days.first,
+            dayNumber: 1,
+            dayStops: stopsByDay[days.first.id] ?? [],
+            locationMap: locationMap,
+            multiDay: false,
+            isDark: isDark,
+            onTap: onTap,
+          ),
+      ],
+    );
+  }
+}
+
+class _DayStopsRow extends StatelessWidget {
+  final ItineraryDay day;
+  final int dayNumber;
+  final List<ItineraryStop> dayStops;
+  final Map<String, MemoryLocation> locationMap;
+  final bool multiDay;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _DayStopsRow({
+    required this.day,
+    required this.dayNumber,
+    required this.dayStops,
+    required this.locationMap,
+    required this.multiDay,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted =
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (multiDay)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8, left: 4),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('📅', style: TextStyle(fontSize: 14)),
-                const SizedBox(width: 6),
                 Text(
-                  l10n.formatMonthDay(date),
+                  '第${_ordinalChinese(dayNumber)}天',
                   style: GoogleFonts.notoSansSc(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                     color: textColor,
                   ),
                 ),
+                if (day.date != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '· ${DateFormat('M月d日').format(day.date!)}',
+                    style: GoogleFonts.notoSansSc(
+                        fontSize: 12, color: textMuted),
+                  ),
+                ],
               ],
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              color: surface,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF78461E).withValues(alpha: 0.28),
-                  offset: const Offset(0, 3),
-                  blurRadius: 10,
-                  spreadRadius: -8,
-                ),
-              ],
+        if (dayStops.isEmpty && (day.dayNote?.isNotEmpty ?? false))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Text(
+              day.dayNote!,
+              style: GoogleFonts.notoSansSc(fontSize: 13, color: textMuted),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            child: Column(
-              children: items.asMap().entries.map((e) {
-                final item = e.value;
-                final isLast = e.key == items.length - 1;
-                final isEditingThis = editingItemId == item.id;
+          )
+        else if (dayStops.isNotEmpty)
+          SizedBox(
+            height: 160,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              itemCount: dayStops.length,
+              itemBuilder: (context, i) => Padding(
+                padding:
+                    EdgeInsets.only(right: i < dayStops.length - 1 ? 12 : 0),
+                child: _StopCard(
+                  stop: dayStops[i],
+                  stopNumber: i + 1,
+                  location: dayStops[i].locationId != null
+                      ? locationMap[dayStops[i].locationId]
+                      : null,
+                  index: dayStops[i].orderIndex,
+                  isDark: isDark,
+                  onTap: onTap,
+                ),
+              ),
+            ),
+          ),
+        if (multiDay) const SizedBox(height: 4),
+      ],
+    );
+  }
+}
 
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: primary,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          if (item.itemTime != null)
-                            SizedBox(
-                              width: 42,
-                              child: Text(
-                                item.itemTime!,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: isEditingThis
-                                      ? primary
-                                      : textMuted,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.clip,
-                                softWrap: false,
-                              ),
-                            )
-                          else
-                            const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  item.title,
-                                  style: GoogleFonts.notoSansSc(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: isEditingThis
-                                        ? primary
-                                        : textColor,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (item.locationName != null)
-                                  Text(
-                                    '📍 ${item.locationName}',
-                                    style: GoogleFonts.notoSansSc(
-                                        fontSize: 10,
-                                        color: textMuted),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => onEdit(item),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Text(
-                                '✎',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: isEditingThis
-                                      ? primary
-                                      : const Color(0xFFCDBFAE),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          GestureDetector(
-                            onTap: () => onDelete(item),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Text(
-                                '🗑',
-                                style: TextStyle(fontSize: 13),
-                              ),
-                            ),
-                          ),
-                        ],
+class _StopCard extends StatelessWidget {
+  final ItineraryStop stop;
+  final int stopNumber;
+  final MemoryLocation? location;
+  final int index;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _StopCard({
+    required this.stop,
+    required this.stopNumber,
+    this.location,
+    required this.index,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final surface =
+        Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
+    final textColor =
+        Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
+    final textMuted =
+        Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
+    final grad = _kLocationGradients[index % _kLocationGradients.length];
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: location != null
+          ? () async {
+              final uri = Uri.parse(
+                  'https://maps.google.com/?q=${Uri.encodeComponent(location!.name)}');
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          : null,
+      child: Container(
+        width: 152,
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF78461E).withValues(alpha: 0.4),
+              offset: const Offset(0, 6),
+              blurRadius: 16,
+              spreadRadius: -10,
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 92,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? [
+                          grad[0].withValues(alpha: 0.8),
+                          grad[1].withValues(alpha: 0.8),
+                        ]
+                      : grad,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 11,
+                    bottom: 9,
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.35)
+                            : Colors.white.withValues(alpha: 0.9),
+                      ),
+                      child: Center(
+                        child: Text(
+                          location != null ? '📍' : '📝',
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                     ),
-                    if (!isLast)
-                      Divider(height: 1, thickness: 1, color: divider),
-                  ],
-                );
-              }).toList(),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    location?.name ?? stop.activityText,
+                    style: GoogleFonts.notoSansSc(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: textColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '第 $stopNumber 站',
+                    style:
+                        GoogleFonts.notoSansSc(fontSize: 11.5, color: textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2841,7 +3253,8 @@ class _MediaTileState extends ConsumerState<_MediaTile> {
 class _ExpensesTab extends ConsumerWidget {
   final String memoryId;
   final double? budget;
-  const _ExpensesTab({required this.memoryId, this.budget});
+  final String? budgetCurrency;
+  const _ExpensesTab({required this.memoryId, this.budget, this.budgetCurrency});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2883,7 +3296,9 @@ class _ExpensesTab extends ConsumerWidget {
         for (final t in txns) {
           if (t.type == 'expense') spent += t.amount;
         }
-        final sym = _currencySym(txns);
+        final sym = budgetCurrency != null
+            ? (const {'MYR': 'RM', 'SGD': 'S\$'}[budgetCurrency] ?? budgetCurrency!)
+            : _currencySym(txns);
         final hasBudget = budget != null && budget! > 0;
         final remaining = hasBudget ? budget! - spent : 0.0;
         final progress =

@@ -31,6 +31,8 @@ String newId() => _uuid.v4();
     MemoryParticipants,
     MemoryLocations,
     ItineraryItems,
+    ItineraryDays,
+    ItineraryStops,
     MediaAssets,
     Wallets,
     Categories,
@@ -47,7 +49,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +116,52 @@ class AppDatabase extends _$AppDatabase {
                 await customStatement(
                   'ALTER TABLE "memories" ADD COLUMN "budget" REAL',
                 );
+              }
+            }
+            if (v == 9) {
+              await m.addColumn(memories, memories.budgetCurrency);
+            }
+            if (v == 10) {
+              await m.createTable(itineraryDays);
+              await m.createTable(itineraryStops);
+              // Migrate existing ItineraryItems → ItineraryDays + ItineraryStops
+              final allMems = await select(memories).get();
+              for (final mem in allMems) {
+                final items = await (select(itineraryItems)
+                      ..where((t) => t.memoryId.equals(mem.id))
+                      ..orderBy([
+                        (t) => OrderingTerm.asc(t.itemDate),
+                        (t) => OrderingTerm.asc(t.sortOrder),
+                      ]))
+                    .get();
+                if (items.isEmpty) continue;
+                final byDate = <String, List<ItineraryItem>>{};
+                for (final item in items) {
+                  final k =
+                      '${item.itemDate.year}-${item.itemDate.month.toString().padLeft(2, '0')}-${item.itemDate.day.toString().padLeft(2, '0')}';
+                  byDate.putIfAbsent(k, () => []).add(item);
+                }
+                final sortedDates = byDate.keys.toList()..sort();
+                for (var i = 0; i < sortedDates.length; i++) {
+                  final dayItems = byDate[sortedDates[i]]!;
+                  final dayId = newId();
+                  await into(itineraryDays).insert(ItineraryDaysCompanion(
+                    id: Value(dayId),
+                    memoryId: Value(mem.id),
+                    dayNumber: Value(i + 1),
+                    date: Value(dayItems.first.itemDate),
+                  ));
+                  for (var j = 0; j < dayItems.length; j++) {
+                    final item = dayItems[j];
+                    await into(itineraryStops).insert(ItineraryStopsCompanion(
+                      id: Value(newId()),
+                      dayId: Value(dayId),
+                      orderIndex: Value(j),
+                      activityText: Value(item.title),
+                      timeLabel: Value(item.itemTime),
+                    ));
+                  }
+                }
               }
             }
             if (v == 4) {

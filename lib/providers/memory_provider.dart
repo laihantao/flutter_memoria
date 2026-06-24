@@ -34,6 +34,24 @@ final itineraryProvider =
   return ref.watch(databaseProvider).memoryDao.watchItinerary(memoryId);
 });
 
+final itineraryDaysProvider =
+    StreamProvider.family<List<ItineraryDay>, String>((ref, memoryId) {
+  return ref.watch(databaseProvider).memoryDao.watchItineraryDays(memoryId);
+});
+
+final itineraryStopsProvider =
+    StreamProvider.family<List<ItineraryStop>, String>((ref, dayId) {
+  return ref.watch(databaseProvider).memoryDao.watchItineraryStops(dayId);
+});
+
+final allItineraryStopsProvider =
+    StreamProvider.family<List<ItineraryStop>, String>((ref, memoryId) {
+  return ref
+      .watch(databaseProvider)
+      .memoryDao
+      .watchAllItineraryStopsForMemory(memoryId);
+});
+
 final mediaAssetsProvider =
     StreamProvider.family<List<MediaAsset>, String>((ref, memoryId) {
   return ref.watch(databaseProvider).memoryDao.watchMediaAssets(memoryId);
@@ -69,6 +87,7 @@ class MemoryNotifier extends AsyncNotifier<void> {
     required DateTime startDate,
     DateTime? endDate,
     double? budget,
+    String? budgetCurrency,
     List<String> locationNames = const [],
     List<String> participantIds = const [],
   }) async {
@@ -87,6 +106,7 @@ class MemoryNotifier extends AsyncNotifier<void> {
       endDate: Value(endDate),
       locationName: Value(locationName),
       budget: Value(budget),
+      budgetCurrency: Value(budgetCurrency),
       createdAt: existingId == null ? Value(now) : const Value.absent(),
       updatedAt: Value(now),
     ));
@@ -152,6 +172,8 @@ class MemoryNotifier extends AsyncNotifier<void> {
 
       // Itinerary, media asset records, participants, locations
       await _db.memoryDao.clearItineraryItems(id);
+      await _db.memoryDao.clearAllItineraryStopsForMemory(id);
+      await _db.memoryDao.clearItineraryDays(id);
       await _db.memoryDao.clearMediaAssets(id);
       await _db.memoryDao.clearParticipants(id);
       await _db.memoryDao.clearLocations(id);
@@ -300,6 +322,106 @@ class MemoryNotifier extends AsyncNotifier<void> {
         ));
       }
     }
+  }
+
+  // ── Itinerary Days ────────────────────────────────────────────────────────────
+
+  Future<String> addItineraryDay({
+    required String memoryId,
+    required int dayNumber,
+    DateTime? date,
+    String? dayNote,
+  }) async {
+    final id = _uuid.v4();
+    await _db.memoryDao.upsertItineraryDay(ItineraryDaysCompanion(
+      id: Value(id),
+      memoryId: Value(memoryId),
+      dayNumber: Value(dayNumber),
+      date: Value(date),
+      dayNote: Value(dayNote),
+    ));
+    return id;
+  }
+
+  Future<void> deleteItineraryDay(String dayId) async {
+    await _db.memoryDao.clearItineraryStops(dayId);
+    await _db.memoryDao.deleteItineraryDay(dayId);
+  }
+
+  // ── Itinerary Stops ───────────────────────────────────────────────────────────
+
+  Future<String> addItineraryStop({
+    required String dayId,
+    String? locationId,
+    required int orderIndex,
+    required String activityText,
+    String? timeLabel,
+  }) async {
+    final id = _uuid.v4();
+    await _db.memoryDao.upsertItineraryStop(ItineraryStopsCompanion(
+      id: Value(id),
+      dayId: Value(dayId),
+      locationId: Value(locationId),
+      orderIndex: Value(orderIndex),
+      activityText: Value(activityText),
+      timeLabel: Value(timeLabel),
+    ));
+    return id;
+  }
+
+  Future<void> updateItineraryStop(ItineraryStop stop) async {
+    await _db.memoryDao.upsertItineraryStop(ItineraryStopsCompanion(
+      id: Value(stop.id),
+      dayId: Value(stop.dayId),
+      locationId: Value(stop.locationId),
+      orderIndex: Value(stop.orderIndex),
+      activityText: Value(stop.activityText),
+      timeLabel: Value(stop.timeLabel),
+    ));
+  }
+
+  Future<void> deleteItineraryStop(String stopId) async {
+    await _db.memoryDao.deleteItineraryStop(stopId);
+  }
+
+  Future<void> reorderItineraryStops(
+      String dayId, List<String> orderedIds) async {
+    for (var i = 0; i < orderedIds.length; i++) {
+      await _db.memoryDao.updateItineraryStopOrder(orderedIds[i], i);
+    }
+  }
+
+  Future<String> addMemoryLocation(String memoryId, String name) async {
+    final locations = await _db.memoryDao.getLocations(memoryId);
+    final nextOrder = locations.isEmpty
+        ? 0
+        : locations
+                .map((l) => l.sortOrder)
+                .reduce((a, b) => a > b ? a : b) +
+            1;
+    final id = _uuid.v4();
+    await _db.memoryDao.upsertLocation(MemoryLocationsCompanion(
+      id: Value(id),
+      memoryId: Value(memoryId),
+      name: Value(name),
+      sortOrder: Value(nextOrder),
+    ));
+    return id;
+  }
+
+  Future<String> addItineraryDayWithAutoNumber(String memoryId,
+      {DateTime? startDate, DateTime? endDate}) async {
+    final days = await _db.memoryDao.getItineraryDays(memoryId);
+    final nextNumber = days.isEmpty
+        ? 1
+        : days.map((d) => d.dayNumber).reduce((a, b) => a > b ? a : b) + 1;
+    DateTime? date;
+    if (startDate != null) {
+      final candidate = startDate.add(Duration(days: nextNumber - 1));
+      if (endDate == null || !candidate.isAfter(endDate)) date = candidate;
+    }
+    return addItineraryDay(
+        memoryId: memoryId, dayNumber: nextNumber, date: date);
   }
 
   Future<String> createOrGetTag(String label) async {
