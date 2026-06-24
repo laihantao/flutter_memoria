@@ -12,6 +12,7 @@ import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_background.dart';
 
 class GroupDetailScreen extends ConsumerStatefulWidget {
   final String groupId;
@@ -207,7 +208,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               ],
             ),
           ),
-          body: TabBarView(
+          body: ThemeBackground(
+            child: TabBarView(
             controller: _tabCtrl,
             children: [
               _OverviewTab(
@@ -224,6 +226,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               ),
               _GalleryTab(groupId: widget.groupId),
             ],
+          ),
           ),
           floatingActionButton: isGalleryTab
               ? FloatingActionButton(

@@ -11,6 +11,7 @@ import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_background.dart';
 
 bool _isPartnerTagLabel(String t) =>
     t == '伴侣' || t.toLowerCase() == 'partner';
@@ -231,7 +232,8 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: ThemeBackground(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
@@ -403,6 +405,7 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

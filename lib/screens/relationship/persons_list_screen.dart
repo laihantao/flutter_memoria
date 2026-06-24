@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/app_database.dart';
+import '../../widgets/theme_background.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/app_theme_extension.dart';
 import '../../widgets/person_avatar.dart';
 
 // Pink palette for the partner card.
@@ -112,12 +114,14 @@ class _PersonsListScreenState extends ConsumerState<PersonsListScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabCtrl,
-        children: const [
-          _PersonsTabBody(),
-          _GroupsTabBody(),
-        ],
+      body: ThemeBackground(
+        child: TabBarView(
+          controller: _tabCtrl,
+          children: const [
+            _PersonsTabBody(),
+            _GroupsTabBody(),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: isGroupTab
@@ -339,7 +343,12 @@ class _PartnerCard extends ConsumerWidget {
   }
 }
 
-// ── Regular person card ───────────────────────────────────────────────────────
+// ── Regular person card — fake-glass effect ───────────────────────────────────
+//
+// Uses a semi-transparent themed tint (glassTintColor) + thin white-ish border
+// so the gradient/decoration layer shows through without any BackdropFilter
+// cost. BackdropFilter over an animated background in a scrolling list would
+// composite+blur every visible card on every animation frame, causing jank.
 
 class _PersonCard extends ConsumerWidget {
   final Person person;
@@ -348,37 +357,53 @@ class _PersonCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tagsAsync = ref.watch(personTagsProvider(person.id));
+    final glassTint =
+        Theme.of(context).extension<AppThemeExtension>()?.glassTintColor ??
+        Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.72);
 
-    return Card(
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: PersonAvatar(
-          name: person.name,
-          imagePath: person.avatarPath,
-          radius: 24,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        decoration: BoxDecoration(
+          color: glassTint,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.35),
+            width: 0.8,
+          ),
         ),
-        title: Text(person.name,
-            style: Theme.of(context).textTheme.titleMedium),
-        subtitle: tagsAsync.when(
-          data: (tags) => tags.isEmpty
-              ? null
-              : Wrap(
-                  spacing: 4,
-                  children: tags
-                      .map((t) => Chip(
-                            label: Text(t.tagLabel,
-                                style: const TextStyle(fontSize: 11)),
-                            padding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
-                          ))
-                      .toList(),
-                ),
-          loading: () => null,
-          error: (_, _) => null,
+        child: Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: PersonAvatar(
+              name: person.name,
+              imagePath: person.avatarPath,
+              radius: 24,
+            ),
+            title: Text(person.name,
+                style: Theme.of(context).textTheme.titleMedium),
+            subtitle: tagsAsync.when(
+              data: (tags) => tags.isEmpty
+                  ? null
+                  : Wrap(
+                      spacing: 4,
+                      children: tags
+                          .map((t) => Chip(
+                                label: Text(t.tagLabel,
+                                    style: const TextStyle(fontSize: 11)),
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                              ))
+                          .toList(),
+                    ),
+              loading: () => null,
+              error: (_, _) => null,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/people/${person.id}'),
+          ),
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => context.push('/people/${person.id}'),
       ),
     );
   }

@@ -239,6 +239,11 @@ class AppTheme {
           textSecondary: textMuted,
           mutedColor: muted,
           borderColor: border,
+          // Fake-glass card tint: theme bg at 0.72 for light themes,
+          // theme surface at 0.80 for dark (ensures readable light text).
+          glassTintColor: isDark
+              ? surface.withValues(alpha: 0.80)
+              : bg.withValues(alpha: 0.72),
         ),
       ],
     );

@@ -13,6 +13,8 @@ class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
   final Color textSecondary;
   final Color mutedColor;
   final Color borderColor;
+  // Semi-transparent tint used for fake-glass card overlays.
+  final Color glassTintColor;
 
   const AppThemeExtension({
     required this.coverGradient,
@@ -25,6 +27,7 @@ class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
     required this.textSecondary,
     required this.mutedColor,
     required this.borderColor,
+    required this.glassTintColor,
   });
 
   @override
@@ -39,6 +42,7 @@ class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
     Color? textSecondary,
     Color? mutedColor,
     Color? borderColor,
+    Color? glassTintColor,
   }) {
     return AppThemeExtension(
       coverGradient: coverGradient ?? this.coverGradient,
@@ -51,6 +55,7 @@ class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
       textSecondary: textSecondary ?? this.textSecondary,
       mutedColor: mutedColor ?? this.mutedColor,
       borderColor: borderColor ?? this.borderColor,
+      glassTintColor: glassTintColor ?? this.glassTintColor,
     );
   }
 
@@ -69,6 +74,7 @@ class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       mutedColor: Color.lerp(mutedColor, other.mutedColor, t)!,
       borderColor: Color.lerp(borderColor, other.borderColor, t)!,
+      glassTintColor: Color.lerp(glassTintColor, other.glassTintColor, t)!,
     );
   }
 }

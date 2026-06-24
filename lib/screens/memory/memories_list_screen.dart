@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_background.dart';
 
 String _cardTypeEmoji(String type) => switch (type) {
       '旅行' => '✈️',
@@ -39,18 +40,20 @@ class MemoriesListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(l10n.memoriesTitle),
       ),
-      body: memoriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(l10n.errorWith('$e'))),
-        data: (memories) => memories.isEmpty
-            ? _EmptyState(onAdd: () => context.push('/memories/new'))
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-                itemCount: memories.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 14),
-                itemBuilder: (context, i) =>
-                    _MemoryCard(memory: memories[i]),
-              ),
+      body: ThemeBackground(
+        child: memoriesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text(l10n.errorWith('$e'))),
+          data: (memories) => memories.isEmpty
+              ? _EmptyState(onAdd: () => context.push('/memories/new'))
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+                  itemCount: memories.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 14),
+                  itemBuilder: (context, i) =>
+                      _MemoryCard(memory: memories[i]),
+                ),
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/memories/new'),

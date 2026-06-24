@@ -28,6 +28,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_background.dart';
 import '../../widgets/theme_picker_grid.dart';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -294,6 +295,50 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     }
   }
 
+  Future<void> _deleteMemory(Memory memory) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除回忆'),
+        content: Text(
+          '即将永久删除「${memory.title}」及其所有关联数据（行程、相册、费用记录），此操作无法撤销。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await ref.read(memoryNotifierProvider.notifier).deleteMemory(widget.id);
+      if (mounted) {
+        context.pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已删除'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败：$e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
@@ -310,7 +355,8 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
           return Scaffold(body: Center(child: Text(l10n.memoryNotFound)));
         }
         return Scaffold(
-          body: Column(
+          body: ThemeBackground(
+           child: Column(
             children: [
               // Hero / mini-header area — animates between full hero and compact bar
               ClipRect(
@@ -377,11 +423,15 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
                     _ItineraryTab(memoryId: widget.id, memory: memory),
                     _GalleryTab(memoryId: widget.id),
                     _ExpensesTab(memoryId: widget.id, budget: memory.budget),
-                    _SettingsTab(onExport: () => _exportPdf(memory)),
+                    _SettingsTab(
+              onExport: () => _exportPdf(memory),
+              onDelete: () => _deleteMemory(memory),
+            ),
                   ],
                 ),
               ),
             ],
+           ),
           ),
           floatingActionButton: _tabs.index == 2
               ? FloatingActionButton(
@@ -3709,12 +3759,11 @@ class _ThumbnailItemState extends State<_ThumbnailItem> {
 
 class _SettingsTab extends StatelessWidget {
   final VoidCallback onExport;
-  const _SettingsTab({required this.onExport});
+  final VoidCallback onDelete;
+  const _SettingsTab({required this.onExport, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
-    final bg = Theme.of(context).extension<AppThemeExtension>()!.backgroundColor;
-    final surface = Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
     final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
     final text = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
@@ -3735,19 +3784,15 @@ class _SettingsTab extends StatelessWidget {
 
     Widget divider() => Divider(height: 1, thickness: 1, color: border);
 
-    return ColoredBox(
-      color: bg,
-      child: ListView(
+    return ListView(
         padding: const EdgeInsets.only(bottom: 40),
         children: [
           // ── 导出 section ──
           sectionHeader('导出'),
-          Container(
-            color: surface,
-            child: Column(
-              children: [
-                divider(),
-                InkWell(
+          Column(
+            children: [
+              divider(),
+              InkWell(
                   onTap: onExport,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -3774,16 +3819,59 @@ class _SettingsTab extends StatelessWidget {
                   ),
                 ),
                 divider(),
+            ],
+          ),
+
+          // ── 主题 section ──
+          sectionHeader('主题'),
+          const ThemePickerGrid(),
+
+          // ── 删除 section — visually separate, fixed danger red regardless of theme ──
+          const SizedBox(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD93025),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.delete_outline,
+                            color: Colors.white, size: 20),
+                        const SizedBox(width: 10),
+                        Text(
+                          '删除回忆',
+                          style: GoogleFonts.notoSansSc(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '此操作无法撤销',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 12,
+                    color: textMuted,
+                  ),
+                ),
               ],
             ),
           ),
-
-          // ── 主题 section (quick-access shortcut; authoritative state lives in global provider) ──
-          sectionHeader('主题'),
-          const ThemePickerGrid(),
-          const SizedBox(height: 8),
         ],
-      ),
     );
   }
 }

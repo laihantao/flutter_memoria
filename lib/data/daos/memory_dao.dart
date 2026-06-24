@@ -110,6 +110,9 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
   Future<void> deleteItineraryItem(String id) =>
       (delete(itineraryItems)..where((t) => t.id.equals(id))).go();
 
+  Future<void> clearItineraryItems(String memoryId) =>
+      (delete(itineraryItems)..where((t) => t.memoryId.equals(memoryId))).go();
+
   // ── Media Assets ──────────────────────────────────────────────────────────────
 
   Stream<List<MediaAsset>> watchMediaAssets(String memoryId) =>
@@ -130,6 +133,9 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
   Future<void> deleteMediaAsset(String id) =>
       (delete(mediaAssets)..where((t) => t.id.equals(id))).go();
 
+  Future<void> clearMediaAssets(String memoryId) =>
+      (delete(mediaAssets)..where((t) => t.memoryId.equals(memoryId))).go();
+
   // ── Tags ──────────────────────────────────────────────────────────────────────
 
   Stream<List<Tag>> watchAllTags() =>
@@ -141,6 +147,12 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
   Future<void> linkTagToMemory(String tagId, String memoryId) =>
       (update(tags)..where((t) => t.id.equals(tagId)))
           .write(TagsCompanion(memoryId: Value(memoryId)));
+
+  Future<List<Tag>> getTagsByMemoryId(String memoryId) =>
+      (select(tags)..where((t) => t.memoryId.equals(memoryId))).get();
+
+  Future<void> clearTagsForMemory(String memoryId) =>
+      (delete(tags)..where((t) => t.memoryId.equals(memoryId))).go();
 
   // ── Time Categories ───────────────────────────────────────────────────────────
 

@@ -17,6 +17,13 @@ class ThemeConfig {
   final Color mutedColor;
   final Color borderColor;
   final List<String> decorations;
+  // Page-level background (ThemeBackground uses these, NOT lightGradient/darkGradient).
+  // null → flat backgroundColor.
+  final Gradient? lightPageBackground;
+  final Gradient? darkPageBackground;
+  // Theme-internal multipliers (invisible to user sliders).
+  final double densityBaseMultiplier;
+  final double speedBaseMultiplier;
 
   const ThemeConfig({
     required this.id,
@@ -35,6 +42,10 @@ class ThemeConfig {
     required this.mutedColor,
     required this.borderColor,
     this.decorations = const [],
+    this.lightPageBackground,
+    this.darkPageBackground,
+    this.densityBaseMultiplier = 1.0,
+    this.speedBaseMultiplier = 1.0,
   });
 }
 
@@ -74,6 +85,7 @@ const kThemes = <ThemeConfig>[
     ),
     cardShadowColor: Color(0xFF78461E),
     decorations: [],
+    // flat page background — no lightPageBackground
   ),
   ThemeConfig(
     id: 'frost_blue',
@@ -110,6 +122,14 @@ const kThemes = <ThemeConfig>[
     ),
     cardShadowColor: Color(0xFF1A4A6E),
     decorations: ['snowflake'],
+    lightPageBackground: LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0xFFEAF4FB), Color(0xFFBFDBF7), Color(0xFF8FB8E8)],
+      stops: [0.0, 0.55, 1.0],
+    ),
+    densityBaseMultiplier: 0.7,
+    speedBaseMultiplier: 0.5,
   ),
   ThemeConfig(
     id: 'heat_wave',
@@ -146,6 +166,7 @@ const kThemes = <ThemeConfig>[
     ),
     cardShadowColor: Color(0xFF8B3A1A),
     decorations: ['flame'],
+    // flat page background — no lightPageBackground
   ),
   ThemeConfig(
     id: 'starry_night',
@@ -182,6 +203,13 @@ const kThemes = <ThemeConfig>[
     ),
     cardShadowColor: Color(0xFF2A2A6A),
     decorations: ['star'],
+    darkPageBackground: LinearGradient(
+      begin: Alignment(-0.5, -1.0),
+      end: Alignment(0.5, 1.0),
+      colors: [Color(0xFF3D4F85), Color(0xFF1E2952), Color(0xFF0D1329)],
+      stops: [0.0, 0.58, 1.0],
+    ),
+    speedBaseMultiplier: 1.2,
   ),
 ];
 

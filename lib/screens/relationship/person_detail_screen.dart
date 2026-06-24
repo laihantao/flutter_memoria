@@ -10,6 +10,7 @@ import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/copyable_field.dart';
 import '../../widgets/person_avatar.dart';
+import '../../widgets/theme_background.dart';
 import '../../widgets/timeline_note.dart';
 
 class PersonDetailScreen extends ConsumerStatefulWidget {
@@ -102,7 +103,8 @@ class _PersonDetailScreenState extends ConsumerState<PersonDetailScreen> {
               ),
             ],
           ),
-          body: SingleChildScrollView(
+          body: ThemeBackground(
+            child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,6 +236,7 @@ class _PersonDetailScreenState extends ConsumerState<PersonDetailScreen> {
                 ),
               ],
             ),
+          ),
           ),
         );
       },

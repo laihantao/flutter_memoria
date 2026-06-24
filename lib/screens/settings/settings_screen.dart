@@ -13,6 +13,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/backup_service.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
+import '../../widgets/theme_background.dart';
 import '../../widgets/theme_picker_grid.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -25,7 +26,8 @@ class SettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settingsTitle)),
-      body: ListView(
+      body: ThemeBackground(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _SectionHeader(l10n.settingsSectionPersonal),
@@ -47,6 +49,8 @@ class SettingsScreen extends ConsumerWidget {
           const ThemePickerGrid(),
           const SizedBox(height: 12),
           _AnimationsToggle(),
+          _DecorationDensitySlider(),
+          _AnimationSpeedSlider(),
           const Divider(),
           _SectionHeader(l10n.settingsSectionLanguage),
           RadioGroup<Locale>(
@@ -116,6 +120,7 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(l10n.settingsAppVersion),
           ),
         ],
+      ),
       ),
     );
   }
@@ -265,6 +270,109 @@ class _AnimationsToggle extends ConsumerWidget {
             activeThumbColor: ext.accentColor,
             onChanged: (val) =>
                 ref.read(animationsEnabledProvider.notifier).setEnabled(val),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DecorationDensitySlider extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ext = Theme.of(context).extension<AppThemeExtension>()!;
+    final density = ref.watch(decorationDensityProvider);
+    final animEnabled = ref.watch(animationsEnabledProvider);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '装饰数量',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: animEnabled ? ext.textPrimary : ext.textSecondary,
+                ),
+              ),
+              Text(
+                '${(density * 100).round()}%',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: animEnabled ? ext.accentColor : ext.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: density,
+            min: 0.0,
+            max: 2.0,
+            divisions: 20,
+            activeColor: animEnabled ? ext.accentColor : ext.borderColor,
+            inactiveColor: ext.borderColor,
+            onChanged: animEnabled
+                ? (val) =>
+                    ref.read(decorationDensityProvider.notifier).setDensity(val)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnimationSpeedSlider extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ext = Theme.of(context).extension<AppThemeExtension>()!;
+    final speed = ref.watch(animationSpeedMultiplierProvider);
+    final animEnabled = ref.watch(animationsEnabledProvider);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '动画速度',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: animEnabled ? ext.textPrimary : ext.textSecondary,
+                ),
+              ),
+              Text(
+                '${speed.toStringAsFixed(1)}x',
+                style: GoogleFonts.notoSansSc(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: animEnabled ? ext.accentColor : ext.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: speed,
+            min: 0.5,
+            max: 2.0,
+            divisions: 15,
+            activeColor: animEnabled ? ext.accentColor : ext.borderColor,
+            inactiveColor: ext.borderColor,
+            onChanged: animEnabled
+                ? (val) => ref
+                    .read(animationSpeedMultiplierProvider.notifier)
+                    .setSpeed(val)
+                : null,
           ),
         ],
       ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../widgets/theme_background.dart';
 import '../../providers/person_provider.dart';
 import '../../theme/app_theme.dart';
 
@@ -69,7 +70,8 @@ class _PartnerDashboardState extends ConsumerState<PartnerDashboardScreen>
           if (ext == null) {
             return const Center(child: CircularProgressIndicator());
           }
-          return TabBarView(
+          return ThemeBackground(
+            child: TabBarView(
             controller: _tabs,
             children: [
               _AnniversariesTab(
@@ -80,6 +82,7 @@ class _PartnerDashboardState extends ConsumerState<PartnerDashboardScreen>
                   notifier: ref.read(personNotifierProvider.notifier)),
               _MemoriesTab(personId: widget.personId),
             ],
+          ),
           );
         },
       ),

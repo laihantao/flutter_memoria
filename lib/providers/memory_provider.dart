@@ -126,14 +126,39 @@ class MemoryNotifier extends AsyncNotifier<void> {
   }
 
   Future<void> deleteMemory(String id) async {
+    // Delete media files first (best-effort; file failures don't block DB cleanup)
     final assets = await _db.memoryDao.getMediaAssets(id);
     for (final asset in assets) {
-      await deleteAppDocFile(asset.filePath);
+      try { await deleteAppDocFile(asset.filePath); } catch (_) {}
       if (asset.thumbnailPath != null) {
-        await deleteAppDocFile(asset.thumbnailPath!);
+        try { await deleteAppDocFile(asset.thumbnailPath!); } catch (_) {}
       }
     }
-    await _db.memoryDao.deleteMemory(id);
+
+    // Cascade-delete all DB records in a single transaction
+    await _db.transaction(() async {
+      // Expense transactions directly linked to this memory
+      final txns = await _db.expenseDao.getTransactionsByMemoryId(id);
+      final txIds = txns.map((t) => t.id).toList();
+      await _db.expenseDao.clearSplitsByTransactionIds(txIds);
+      await _db.expenseDao.clearTransactionTagsByTransactionIds(txIds);
+      await _db.expenseDao.clearTransactionsByMemoryId(id);
+
+      // Tags belonging to this memory (and their transaction_tag links)
+      final memoryTags = await _db.memoryDao.getTagsByMemoryId(id);
+      final tagIds = memoryTags.map((t) => t.id).toList();
+      await _db.expenseDao.clearTransactionTagsByTagIds(tagIds);
+      await _db.memoryDao.clearTagsForMemory(id);
+
+      // Itinerary, media asset records, participants, locations
+      await _db.memoryDao.clearItineraryItems(id);
+      await _db.memoryDao.clearMediaAssets(id);
+      await _db.memoryDao.clearParticipants(id);
+      await _db.memoryDao.clearLocations(id);
+
+      // Finally the memory itself
+      await _db.memoryDao.deleteMemory(id);
+    });
   }
 
   Future<void> addItineraryItem({
