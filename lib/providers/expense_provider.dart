@@ -12,48 +12,9 @@ const _uuid = Uuid();
 
 // ── Watches ───────────────────────────────────────────────────────────────────
 
-final walletsProvider = StreamProvider<List<Wallet>>((ref) {
-  return ref.watch(databaseProvider).expenseDao.watchAllWallets();
-});
-
-final walletProvider = StreamProvider.family<Wallet?, String>((ref, id) {
-  return ref.watch(databaseProvider).expenseDao.watchWallet(id);
-});
-
-// (walletId, year, month) key
-final transactionsByWalletMonthProvider =
-    StreamProvider.family<List<Transaction>, (String, int, int)>(
-        (ref, key) {
-  return ref
-      .watch(databaseProvider)
-      .expenseDao
-      .watchTransactionsByWalletAndMonth(key.$1, key.$2, key.$3);
-});
-
 final categoriesProvider =
     StreamProvider.family<List<Category>, String?>((ref, type) {
   return ref.watch(databaseProvider).expenseDao.watchCategories(type: type);
-});
-
-final transactionsByWalletProvider =
-    StreamProvider.family<List<Transaction>, String>((ref, walletId) {
-  return ref
-      .watch(databaseProvider)
-      .expenseDao
-      .watchTransactionsByWallet(walletId);
-});
-
-final allTransactionsProvider = StreamProvider<List<Transaction>>((ref) {
-  return ref.watch(databaseProvider).expenseDao.watchAllTransactions();
-});
-
-// (year, month) tuple key
-final transactionsByMonthProvider =
-    StreamProvider.family<List<Transaction>, (int, int)>((ref, ym) {
-  return ref
-      .watch(databaseProvider)
-      .expenseDao
-      .watchTransactionsByMonth(ym.$1, ym.$2);
 });
 
 final transactionsByMemoryProvider =
@@ -69,6 +30,11 @@ final transactionSplitsProvider =
   return ref.watch(databaseProvider).expenseDao.watchSplits(txId);
 });
 
+final memoryBudgetsProvider =
+    StreamProvider.family<List<MemoryBudget>, String>((ref, memoryId) {
+  return ref.watch(databaseProvider).expenseDao.watchBudgets(memoryId);
+});
+
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class ExpenseNotifier extends AsyncNotifier<void> {
@@ -77,69 +43,7 @@ class ExpenseNotifier extends AsyncNotifier<void> {
 
   AppDatabase get _db => ref.read(databaseProvider);
 
-  Future<String> saveWallet({
-    String? existingId,
-    required String name,
-    required String currencyCode,
-    String? iconName,
-    String? colorHex,
-    double initialBalance = 0.0,
-  }) async {
-    final id = existingId ?? _uuid.v4();
-    await _db.expenseDao.upsertWallet(WalletsCompanion(
-      id: Value(id),
-      name: Value(name),
-      currencyCode: Value(currencyCode),
-      iconName: Value(iconName),
-      colorHex: Value(colorHex),
-      initialBalance: Value(initialBalance),
-      createdAt:
-          existingId == null ? Value(DateTime.now()) : const Value.absent(),
-    ));
-    return id;
-  }
-
-  Future<void> deleteWallet(String id) async {
-    await _db.expenseDao.deleteWallet(id);
-  }
-
-  /// Simple expense/income save — wallet and payer are optional.
-  Future<String> saveExpense({
-    String? existingId,
-    String? walletId,
-    String? memoryId,
-    required String type,
-    required String categoryId,
-    required double amount,
-    required String currencyCode,
-    DateTime? txnDate,
-    String? note,
-    String? title,
-  }) async {
-    final id = existingId ?? _uuid.v4();
-    final now = DateTime.now();
-    final self = await _db.personDao.getSelfPerson();
-
-    await _db.expenseDao.upsertTransaction(TransactionsCompanion(
-      id: Value(id),
-      walletId: Value(walletId),
-      memoryId: Value(memoryId),
-      type: Value(type),
-      categoryId: Value(categoryId),
-      amount: Value(amount),
-      currencyCode: Value(currencyCode),
-      txnDate: Value(txnDate ?? now),
-      title: Value(title),
-      note: Value(note),
-      payerPersonId: Value(self?.id),
-      createdAt: existingId == null ? Value(now) : const Value.absent(),
-      updatedAt: Value(now),
-    ));
-
-    return id;
-  }
-
-  /// Full transaction save (legacy wallet-based flow).
+  /// Full transaction save.
   Future<String> saveTransaction({
     String? existingId,
     String? walletId,
@@ -224,23 +128,52 @@ class ExpenseNotifier extends AsyncNotifier<void> {
     await _db.expenseDao.deleteTransaction(id);
   }
 
-  Future<void> bulkTagTransactions(
-      List<String> transactionIds, String tagId) async {
-    await _db.expenseDao.bulkTagTransactions(transactionIds, tagId);
-  }
-
-  Future<void> addCategory({
+  Future<void> saveCategory({
+    String? existingId,
     required String name,
     required String type,
     String? iconName,
+    int? sortOrder,
   }) async {
     await _db.expenseDao.upsertCategory(CategoriesCompanion(
-      id: Value(_uuid.v4()),
+      id: Value(existingId ?? _uuid.v4()),
       name: Value(name),
       type: Value(type),
       iconName: Value(iconName),
+      sortOrder:
+          sortOrder != null ? Value(sortOrder) : const Value.absent(),
     ));
   }
+
+  /// Deletes a category unless transactions still reference it.
+  /// Returns true when deleted, false when blocked by existing history.
+  Future<bool> deleteCategory(String id) async {
+    final used = await _db.expenseDao.countTransactionsByCategory(id);
+    if (used > 0) return false;
+    await _db.expenseDao.deleteCategory(id);
+    return true;
+  }
+
+  Future<void> reorderCategories(List<String> orderedIds) =>
+      _db.expenseDao.reorderCategories(orderedIds);
+
+  // ── Memory budgets ──────────────────────────────────────────────────────────
+
+  Future<void> saveBudget({
+    String? existingId,
+    required String memoryId,
+    required String currencyCode,
+    required double amount,
+  }) async {
+    await _db.expenseDao.upsertBudget(MemoryBudgetsCompanion(
+      id: Value(existingId ?? _uuid.v4()),
+      memoryId: Value(memoryId),
+      currencyCode: Value(currencyCode),
+      amount: Value(amount),
+    ));
+  }
+
+  Future<void> deleteBudget(String id) => _db.expenseDao.deleteBudget(id);
 }
 
 final expenseNotifierProvider =

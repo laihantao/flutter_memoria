@@ -156,6 +156,23 @@ class MemoryLocations extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Per-currency budgets for a memory (a trip can budget RM and SGD separately).
+/// Replaces the single Memories.budget column (kept dormant in schema).
+class MemoryBudgets extends Table {
+  TextColumn get id => text()();
+  TextColumn get memoryId => text().references(Memories, #id)();
+  TextColumn get currencyCode => text()();
+  RealColumn get amount => real()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {memoryId, currencyCode},
+      ];
+}
+
 // ── Wallets & Transactions ────────────────────────────────────────────────────
 
 class Wallets extends Table {
@@ -177,6 +194,8 @@ class Categories extends Table {
   TextColumn get type => text()(); // income/expense
   TextColumn get iconName => text().nullable()();
   BoolColumn get isDefault => boolean().withDefault(const Constant(false))();
+  // User-controlled position in the category grid (stable muscle memory).
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};

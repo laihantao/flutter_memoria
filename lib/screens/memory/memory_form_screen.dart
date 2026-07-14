@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -27,7 +26,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _budgetCtrl = TextEditingController();
   String _type = '旅行';
   DateTime? _startDate;
   DateTime? _endDate;
@@ -54,9 +52,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
         _type = memory.type;
         _startDate = memory.startDate;
         _endDate = memory.endDate;
-        if (memory.budget != null) {
-          _budgetCtrl.text = _formatBudget(memory.budget!);
-        }
       }
       final participants = await ref
           .read(databaseProvider)
@@ -77,14 +72,7 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _descCtrl.dispose();
-    _budgetCtrl.dispose();
     super.dispose();
-  }
-
-  static String _formatBudget(double value) {
-    if (value == value.truncateToDouble()) return value.toInt().toString();
-    final s = value.toStringAsFixed(2);
-    return s.endsWith('0') ? s.substring(0, s.length - 1) : s;
   }
 
   Future<void> _showCustomCategoryDialog() async {
@@ -138,8 +126,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
       return;
     }
     setState(() => _saving = true);
-    final budgetText = _budgetCtrl.text.trim();
-    final budget = budgetText.isEmpty ? null : double.tryParse(budgetText);
     try {
       final id = await ref.read(memoryNotifierProvider.notifier).saveMemory(
             existingId: widget.memoryId,
@@ -150,7 +136,6 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
                 : _descCtrl.text.trim(),
             startDate: _startDate!,
             endDate: _endDate,
-            budget: budget,
             locationNames: _locations,
             participantIds: _participantIds.toList(),
           );
@@ -265,35 +250,7 @@ class _MemoryFormScreenState extends ConsumerState<MemoryFormScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _budgetCtrl,
-                decoration: InputDecoration(
-                  labelText: l10n.memoryBudgetLabel,
-                  prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
-                  hintText: '0.00',
-                ),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  // Allow digits and at most one decimal point.
-                  // Detailed format (two decimals max) is enforced by the validator.
-                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                ],
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return null;
-                  final trimmed = v.trim();
-                  // Reject if more than one decimal point or more than 2 decimal places
-                  final dotCount = trimmed.split('').where((c) => c == '.').length;
-                  if (dotCount > 1) return l10n.memoryBudgetInvalid;
-                  final decimalIdx = trimmed.indexOf('.');
-                  if (decimalIdx != -1 && trimmed.length - decimalIdx - 1 > 2) {
-                    return l10n.memoryBudgetInvalid;
-                  }
-                  final val = double.tryParse(trimmed);
-                  if (val == null || val < 0) return l10n.memoryBudgetInvalid;
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
+              // Budget moved to the 费用 tab (per-currency MemoryBudgets).
               _LocationsEditor(
                 locations: _locations,
                 onChanged: (updated) => setState(() => _locations = updated),

@@ -13,4 +13,5 @@ mixin _$ExpenseDaoMixin on DatabaseAccessor<AppDatabase> {
       attachedDatabase.transactionSplits;
   $TagsTable get tags => attachedDatabase.tags;
   $TransactionTagsTable get transactionTags => attachedDatabase.transactionTags;
+  $MemoryBudgetsTable get memoryBudgets => attachedDatabase.memoryBudgets;
 }

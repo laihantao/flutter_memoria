@@ -7,7 +7,6 @@ class HomeShell extends StatelessWidget {
   final Widget child;
   const HomeShell({super.key, required this.child});
 
-  // '/expenses' excluded — that module shows its own inner nav
   static const _rootPaths = {
     '/home',
     '/memories',
@@ -17,8 +16,7 @@ class HomeShell extends StatelessWidget {
 
   int _currentIndex(String location) {
     if (location.startsWith('/people')) return 1;
-    if (location.startsWith('/expenses')) return 2;
-    if (location.startsWith('/settings')) return 3;
+    if (location.startsWith('/settings')) return 2;
     return 0;
   }
 
@@ -32,7 +30,6 @@ class HomeShell extends StatelessWidget {
     final tabs = [
       (icon: Icons.photo_album_outlined, label: l10n.navMemories, path: '/memories'),
       (icon: Icons.people_outline, label: l10n.navPeople, path: '/people'),
-      (icon: Icons.receipt_long_outlined, label: l10n.navExpenses, path: '/expenses'),
       (icon: Icons.settings_outlined, label: l10n.navSettings, path: '/settings'),
     ];
 

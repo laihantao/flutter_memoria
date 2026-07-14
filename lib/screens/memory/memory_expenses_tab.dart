@@ -1,0 +1,997 @@
+import 'dart:math' show pi, min, cos, sin;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../data/app_database.dart';
+import '../../l10n/app_localizations.dart';
+import '../../providers/expense_provider.dart';
+import '../../providers/person_provider.dart';
+import '../../theme/app_theme_extension.dart';
+import '../../utils/money.dart';
+
+/// Currencies offered in the budget editor (matches the expense form).
+const _kBudgetCurrencies = ['MYR', 'SGD', 'USD', 'EUR', 'CNY'];
+
+/// Theme-agnostic pastel palette for the category donut.
+const _kChartColors = [
+  Color(0xFFF28B82), Color(0xFFFFAD8B), Color(0xFFF7C59F),
+  Color(0xFFE8B4D0), Color(0xFF9AB5CF), Color(0xFFB5C4B1),
+  Color(0xFFD4A5C9), Color(0xFFF0C23E),
+];
+
+/// Memory-detail 费用 tab: 统计 dashboard + 明细 list.
+///
+/// Multi-currency by design — amounts are grouped and shown per currency,
+/// never converted (no exchange-rate guessing).
+class MemoryExpensesTab extends ConsumerStatefulWidget {
+  final String memoryId;
+  const MemoryExpensesTab({super.key, required this.memoryId});
+
+  @override
+  ConsumerState<MemoryExpensesTab> createState() => _MemoryExpensesTabState();
+}
+
+class _MemoryExpensesTabState extends ConsumerState<MemoryExpensesTab> {
+  int _view = 0; // 0 = 统计, 1 = 明细
+  String? _donutCurrency; // null → dominant currency
+
+  AppThemeExtension get _t =>
+      Theme.of(context).extension<AppThemeExtension>()!;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final txAsync = ref.watch(transactionsByMemoryProvider(widget.memoryId));
+    final catAsync = ref.watch(categoriesProvider(null));
+    final budgetsAsync = ref.watch(memoryBudgetsProvider(widget.memoryId));
+
+    return txAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text(l10n.errorWith('$e'))),
+      data: (txns) {
+        final budgets = budgetsAsync.value ?? const <MemoryBudget>[];
+        if (txns.isEmpty && budgets.isEmpty) return _emptyState(l10n);
+
+        final catMap = {
+          for (final c in catAsync.value ?? <Category>[]) c.id: c
+        };
+        return Column(
+          children: [
+            _SegmentedToggle(
+              index: _view,
+              labels: const ['📊 统计', '🧾 明细'],
+              onChanged: (i) => setState(() => _view = i),
+            ),
+            Expanded(
+              child: _view == 0
+                  ? _StatsView(
+                      memoryId: widget.memoryId,
+                      txns: txns,
+                      budgets: budgets,
+                      catMap: catMap,
+                      donutCurrency: _donutCurrency,
+                      onDonutCurrency: (c) =>
+                          setState(() => _donutCurrency = c),
+                    )
+                  : _DetailList(
+                      memoryId: widget.memoryId, txns: txns, catMap: catMap),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _emptyState(AppLocalizations l10n) {
+    final t = _t;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.receipt_long_outlined, size: 48, color: t.textSecondary),
+          const SizedBox(height: 12),
+          Text(l10n.memoryNoExpenses),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: () =>
+                context.push('/memories/${widget.memoryId}/expenses/new'),
+            icon: const Icon(Icons.add),
+            label: Text(l10n.memoryRecordExpense),
+          ),
+          TextButton(
+            onPressed: () => showBudgetSheet(context, ref, widget.memoryId),
+            child: const Text('设置预算'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Segmented toggle ──────────────────────────────────────────────────────────
+
+class _SegmentedToggle extends StatelessWidget {
+  final int index;
+  final List<String> labels;
+  final ValueChanged<int> onChanged;
+  const _SegmentedToggle(
+      {required this.index, required this.labels, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: t.mutedColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: List.generate(labels.length, (i) {
+          final selected = i == index;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                decoration: BoxDecoration(
+                  color: selected ? t.surfaceColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: t.cardShadow.withValues(alpha: 0.25),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  labels[i],
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 13,
+                    fontWeight:
+                        selected ? FontWeight.w700 : FontWeight.w400,
+                    color: selected ? t.textPrimary : t.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// ── 统计 view ─────────────────────────────────────────────────────────────────
+
+class _StatsView extends ConsumerWidget {
+  final String memoryId;
+  final List<Transaction> txns;
+  final List<MemoryBudget> budgets;
+  final Map<String, Category> catMap;
+  final String? donutCurrency;
+  final ValueChanged<String> onDonutCurrency;
+  const _StatsView({
+    required this.memoryId,
+    required this.txns,
+    required this.budgets,
+    required this.catMap,
+    required this.donutCurrency,
+    required this.onDonutCurrency,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+
+    // Per-currency expense totals (income excluded — legacy rows only).
+    final spentByCurrency = <String, double>{};
+    final countByCurrency = <String, int>{};
+    for (final tx in txns) {
+      if (tx.type != 'expense') continue;
+      spentByCurrency[tx.currencyCode] =
+          (spentByCurrency[tx.currencyCode] ?? 0) + tx.amount;
+      countByCurrency[tx.currencyCode] =
+          (countByCurrency[tx.currencyCode] ?? 0) + 1;
+    }
+    final currencies = spentByCurrency.keys.toList()..sort();
+
+    // Donut defaults to the currency with the most rows.
+    var donutCcy = donutCurrency;
+    if (donutCcy == null || !spentByCurrency.containsKey(donutCcy)) {
+      var best = -1;
+      for (final e in countByCurrency.entries) {
+        if (e.value > best) {
+          best = e.value;
+          donutCcy = e.key;
+        }
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+      children: [
+        _BudgetCard(
+          memoryId: memoryId,
+          budgets: budgets,
+          spentByCurrency: spentByCurrency,
+        ),
+        const SizedBox(height: 12),
+        if (currencies.isNotEmpty) ...[
+          _TotalsCard(
+            spentByCurrency: spentByCurrency,
+            countByCurrency: countByCurrency,
+          ),
+          const SizedBox(height: 12),
+          if (donutCcy != null)
+            _CategoryCard(
+              txns: txns,
+              catMap: catMap,
+              currencies: currencies,
+              currency: donutCcy,
+              onCurrency: onDonutCurrency,
+            ),
+          const SizedBox(height: 12),
+          _PayerCard(memoryId: memoryId, txns: txns),
+        ] else
+          _StatCard(
+            title: '总消费',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text('还没有消费记录',
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 13, color: t.textSecondary)),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Card shell ────────────────────────────────────────────────────────────────
+
+class _StatCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+  final Widget? action;
+  const _StatCard({required this.title, required this.child, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.surfaceColor,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: t.cardShadow.withValues(alpha: 0.35),
+            offset: const Offset(0, 4),
+            blurRadius: 14,
+            spreadRadius: -9,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title,
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary)),
+              ?action,
+            ],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Budget card ───────────────────────────────────────────────────────────────
+
+class _BudgetCard extends ConsumerWidget {
+  final String memoryId;
+  final List<MemoryBudget> budgets;
+  final Map<String, double> spentByCurrency;
+  const _BudgetCard({
+    required this.memoryId,
+    required this.budgets,
+    required this.spentByCurrency,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+
+    return _StatCard(
+      title: '预算',
+      action: IconButton(
+        visualDensity: VisualDensity.compact,
+        icon: Icon(Icons.edit_outlined, size: 18, color: t.textSecondary),
+        onPressed: () => showBudgetSheet(context, ref, memoryId),
+        tooltip: '编辑预算',
+      ),
+      child: budgets.isEmpty
+          ? InkWell(
+              onTap: () => showBudgetSheet(context, ref, memoryId),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline,
+                        size: 18, color: t.accentColor),
+                    const SizedBox(width: 8),
+                    Text('设置这段记忆的预算',
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 13, color: t.accentColor)),
+                  ],
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                for (int i = 0; i < budgets.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  _BudgetRow(
+                    budget: budgets[i],
+                    spent: spentByCurrency[budgets[i].currencyCode] ?? 0,
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+class _BudgetRow extends StatelessWidget {
+  final MemoryBudget budget;
+  final double spent;
+  const _BudgetRow({required this.budget, required this.spent});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final over = spent > budget.amount;
+    final remaining = budget.amount - spent;
+    final progress =
+        budget.amount > 0 ? (spent / budget.amount).clamp(0.0, 1.0) : 0.0;
+    final overColor = Colors.red.shade400;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              formatMoneyWithSymbol(budget.amount, budget.currencyCode),
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: t.textPrimary),
+            ),
+            Text(
+              over
+                  ? '超支 ${formatMoneyWithSymbol(-remaining, budget.currencyCode)}'
+                  : '剩 ${formatMoneyWithSymbol(remaining, budget.currencyCode)}',
+              style: GoogleFonts.notoSansSc(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: over ? overColor : t.textSecondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            backgroundColor: t.mutedColor,
+            valueColor:
+                AlwaysStoppedAnimation(over ? overColor : t.accentColor),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '已花 ${formatMoneyWithSymbol(spent, budget.currencyCode)}',
+          style:
+              GoogleFonts.notoSansSc(fontSize: 11, color: t.textSecondary),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Totals card ───────────────────────────────────────────────────────────────
+
+class _TotalsCard extends StatelessWidget {
+  final Map<String, double> spentByCurrency;
+  final Map<String, int> countByCurrency;
+  const _TotalsCard(
+      {required this.spentByCurrency, required this.countByCurrency});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final currencies = spentByCurrency.keys.toList()..sort();
+
+    return _StatCard(
+      title: '总消费',
+      child: Column(
+        children: [
+          for (int i = 0; i < currencies.length; i++) ...[
+            if (i > 0)
+              Divider(height: 16, color: t.borderColor),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  formatMoneyWithSymbol(
+                      spentByCurrency[currencies[i]]!, currencies[i]),
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: t.textPrimary),
+                ),
+                Text(
+                  '${countByCurrency[currencies[i]]} 笔',
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 12, color: t.textSecondary),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Category donut card ───────────────────────────────────────────────────────
+
+class _CategoryCard extends StatelessWidget {
+  final List<Transaction> txns;
+  final Map<String, Category> catMap;
+  final List<String> currencies;
+  final String currency;
+  final ValueChanged<String> onCurrency;
+  const _CategoryCard({
+    required this.txns,
+    required this.catMap,
+    required this.currencies,
+    required this.currency,
+    required this.onCurrency,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+
+    final byCategory = <String, double>{};
+    for (final tx in txns) {
+      if (tx.type != 'expense' || tx.currencyCode != currency) continue;
+      byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
+    }
+    final sorted = byCategory.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final total = byCategory.values.fold(0.0, (a, b) => a + b);
+
+    return _StatCard(
+      title: '分类占比',
+      action: currencies.length > 1
+          ? Wrap(
+              spacing: 4,
+              children: currencies.map((c) {
+                final selected = c == currency;
+                return GestureDetector(
+                  onTap: () => onCurrency(c),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: selected ? t.accentColor : t.mutedColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      c,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? (ThemeData.estimateBrightnessForColor(
+                                        t.accentColor) ==
+                                    Brightness.dark
+                                ? Colors.white
+                                : Colors.black87)
+                            : t.textSecondary,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            )
+          : null,
+      child: total <= 0
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text('该币种暂无支出',
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 13, color: t.textSecondary)),
+            )
+          : Column(
+              children: [
+                SizedBox(
+                  height: 180,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CustomPaint(
+                        size: const Size(double.infinity, 180),
+                        painter: _DonutPainter(
+                          values: sorted.map((e) => e.value).toList(),
+                          colors: [
+                            for (int i = 0; i < sorted.length; i++)
+                              _kChartColors[i % _kChartColors.length],
+                          ],
+                          holeColor: t.surfaceColor,
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('总计',
+                              style: GoogleFonts.notoSansSc(
+                                  fontSize: 11, color: t.textSecondary)),
+                          const SizedBox(height: 2),
+                          Text(
+                            formatMoneyWithSymbol(total, currency),
+                            style: GoogleFonts.plusJakartaSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: t.textPrimary),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 8,
+                  children: [
+                    for (int i = 0; i < sorted.length; i++)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color:
+                                  _kChartColors[i % _kChartColors.length],
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${catMap[sorted[i].key]?.name ?? sorted[i].key} '
+                            '${(sorted[i].value / total * 100).round()}%',
+                            style: GoogleFonts.notoSansSc(
+                                fontSize: 12, color: t.textPrimary),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _DonutPainter extends CustomPainter {
+  final List<double> values;
+  final List<Color> colors;
+  final Color holeColor;
+  const _DonutPainter(
+      {required this.values, required this.colors, required this.holeColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final outerR = min(size.width, size.height) / 2 - 8;
+    final innerR = outerR * 0.58;
+    final total = values.fold(0.0, (a, b) => a + b);
+    if (total == 0) return;
+
+    double start = -pi / 2;
+    for (int i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * 2 * pi;
+      canvas.drawArc(
+        Rect.fromCircle(center: c, radius: outerR),
+        start, sweep, true,
+        Paint()
+          ..color = colors[i % colors.length]
+          ..style = PaintingStyle.fill,
+      );
+      start += sweep;
+    }
+
+    // Separation lines + center hole in the card's surface color so the
+    // donut visually sits on the card in any theme.
+    final linePaint = Paint()
+      ..color = holeColor
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+    start = -pi / 2;
+    for (final v in values) {
+      canvas.drawLine(
+        c,
+        Offset(c.dx + outerR * cos(start), c.dy + outerR * sin(start)),
+        linePaint,
+      );
+      start += v / total * 2 * pi;
+    }
+    canvas.drawCircle(
+        c, innerR, Paint()..color = holeColor..style = PaintingStyle.fill);
+  }
+
+  @override
+  bool shouldRepaint(_DonutPainter old) =>
+      old.values != values || old.holeColor != holeColor;
+}
+
+// ── Payer card ────────────────────────────────────────────────────────────────
+
+class _PayerCard extends ConsumerWidget {
+  final String memoryId;
+  final List<Transaction> txns;
+  const _PayerCard({required this.memoryId, required this.txns});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final roster = ref.watch(memoryParticipantPersonsProvider(memoryId));
+    final names = {for (final p in roster) p.id: p.name};
+
+    // payerId → currency → paid
+    final paid = <String?, Map<String, double>>{};
+    for (final tx in txns) {
+      if (tx.type != 'expense') continue;
+      final inner = paid.putIfAbsent(tx.payerPersonId, () => {});
+      inner[tx.currencyCode] = (inner[tx.currencyCode] ?? 0) + tx.amount;
+    }
+    // Only interesting once several people have paid.
+    if (paid.length < 2) return const SizedBox.shrink();
+
+    String label(String? id) => id == null ? '未指定' : (names[id] ?? '已移除');
+    String amounts(Map<String, double> m) {
+      final codes = m.keys.toList()..sort();
+      return codes
+          .map((c) => formatMoneyWithSymbol(m[c]!, c))
+          .join(' · ');
+    }
+
+    final entries = paid.entries.toList()
+      ..sort((a, b) => b.value.values
+          .fold(0.0, (x, y) => x + y)
+          .compareTo(a.value.values.fold(0.0, (x, y) => x + y)));
+
+    return _StatCard(
+      title: '谁付了多少',
+      child: Column(
+        children: [
+          for (int i = 0; i < entries.length; i++) ...[
+            if (i > 0) Divider(height: 14, color: t.borderColor),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: t.mutedColor,
+                  child: Text(
+                    label(entries[i].key).characters.first.toUpperCase(),
+                    style: TextStyle(fontSize: 11, color: t.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label(entries[i].key),
+                    style: GoogleFonts.notoSansSc(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: t.textPrimary),
+                  ),
+                ),
+                Text(
+                  amounts(entries[i].value),
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── 明细 list ─────────────────────────────────────────────────────────────────
+
+class _DetailList extends StatelessWidget {
+  final String memoryId;
+  final List<Transaction> txns;
+  final Map<String, Category> catMap;
+  const _DetailList(
+      {required this.memoryId, required this.txns, required this.catMap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
+      itemCount: txns.length,
+      itemBuilder: (context, i) {
+        final tx = txns[i];
+        final cat = catMap[tx.categoryId];
+        final isExp = tx.type == 'expense';
+
+        return GestureDetector(
+          onTap: () =>
+              context.push('/memories/$memoryId/expenses/${tx.id}/edit'),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: t.surfaceColor,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: t.cardShadow.withValues(alpha: 0.35),
+                  offset: const Offset(0, 4),
+                  blurRadius: 14,
+                  spreadRadius: -9,
+                ),
+              ],
+            ),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: t.mutedColor,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Center(
+                    child: Text(cat?.iconName ?? '💰',
+                        style: const TextStyle(fontSize: 20)),
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        cat?.name ?? tx.categoryId,
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: t.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        (tx.note ?? '').isNotEmpty
+                            ? '${l10n.formatMonthDay(tx.txnDate)} · ${tx.note}'
+                            : l10n.formatMonthDay(tx.txnDate),
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 12.5, color: t.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 13, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: t.accentColor.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    // Per-row currency — a trip can mix RM and S$ rows.
+                    '${isExp ? '−' : '+'}${formatMoneyWithSymbol(tx.amount, tx.currencyCode)}',
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: t.accentColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Budget editor sheet ───────────────────────────────────────────────────────
+
+/// One row per supported currency; empty field = no budget for that currency.
+/// Clearing a previously-set field deletes the budget row.
+void showBudgetSheet(BuildContext context, WidgetRef ref, String memoryId) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: _BudgetSheet(memoryId: memoryId),
+    ),
+  );
+}
+
+class _BudgetSheet extends ConsumerStatefulWidget {
+  final String memoryId;
+  const _BudgetSheet({required this.memoryId});
+
+  @override
+  ConsumerState<_BudgetSheet> createState() => _BudgetSheetState();
+}
+
+class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
+  final Map<String, TextEditingController> _ctrls = {
+    for (final c in _kBudgetCurrencies) c: TextEditingController(),
+  };
+  Map<String, MemoryBudget> _existing = {};
+  bool _initialized = false;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  static String _fmt(double v) =>
+      v.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final notifier = ref.read(expenseNotifierProvider.notifier);
+      for (final code in _kBudgetCurrencies) {
+        final text = _ctrls[code]!.text.trim();
+        final amount = double.tryParse(text);
+        final existing = _existing[code];
+        if (amount != null && amount > 0) {
+          await notifier.saveBudget(
+            existingId: existing?.id,
+            memoryId: widget.memoryId,
+            currencyCode: code,
+            amount: amount,
+          );
+        } else if (existing != null) {
+          await notifier.deleteBudget(existing.id);
+        }
+      }
+      if (mounted) Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final budgetsAsync = ref.watch(memoryBudgetsProvider(widget.memoryId));
+
+    // Prefill once from the stream's first data.
+    final budgets = budgetsAsync.value;
+    if (!_initialized && budgets != null) {
+      _existing = {for (final b in budgets) b.currencyCode: b};
+      for (final b in budgets) {
+        _ctrls[b.currencyCode]?.text = _fmt(b.amount);
+      }
+      _initialized = true;
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('预算',
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: t.textPrimary)),
+            const SizedBox(height: 4),
+            Text('按币种设置，留空表示不设预算',
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 12, color: t.textSecondary)),
+            const SizedBox(height: 12),
+            for (final code in _kBudgetCurrencies)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 52,
+                      child: Text(code,
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: t.textPrimary)),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _ctrls[code],
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          hintText: '0.00',
+                          prefixText: '${currencySymbol(code)} ',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('保存'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

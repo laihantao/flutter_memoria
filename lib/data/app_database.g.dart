@@ -5023,6 +5023,326 @@ class MemoryLocationsCompanion extends UpdateCompanion<MemoryLocation> {
   }
 }
 
+class $MemoryBudgetsTable extends MemoryBudgets
+    with TableInfo<$MemoryBudgetsTable, MemoryBudget> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MemoryBudgetsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _memoryIdMeta = const VerificationMeta(
+    'memoryId',
+  );
+  @override
+  late final GeneratedColumn<String> memoryId = GeneratedColumn<String>(
+    'memory_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES memories (id)',
+    ),
+  );
+  static const VerificationMeta _currencyCodeMeta = const VerificationMeta(
+    'currencyCode',
+  );
+  @override
+  late final GeneratedColumn<String> currencyCode = GeneratedColumn<String>(
+    'currency_code',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _amountMeta = const VerificationMeta('amount');
+  @override
+  late final GeneratedColumn<double> amount = GeneratedColumn<double>(
+    'amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, memoryId, currencyCode, amount];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'memory_budgets';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MemoryBudget> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('memory_id')) {
+      context.handle(
+        _memoryIdMeta,
+        memoryId.isAcceptableOrUnknown(data['memory_id']!, _memoryIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_memoryIdMeta);
+    }
+    if (data.containsKey('currency_code')) {
+      context.handle(
+        _currencyCodeMeta,
+        currencyCode.isAcceptableOrUnknown(
+          data['currency_code']!,
+          _currencyCodeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_currencyCodeMeta);
+    }
+    if (data.containsKey('amount')) {
+      context.handle(
+        _amountMeta,
+        amount.isAcceptableOrUnknown(data['amount']!, _amountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_amountMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {memoryId, currencyCode},
+  ];
+  @override
+  MemoryBudget map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MemoryBudget(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      memoryId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}memory_id'],
+      )!,
+      currencyCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}currency_code'],
+      )!,
+      amount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}amount'],
+      )!,
+    );
+  }
+
+  @override
+  $MemoryBudgetsTable createAlias(String alias) {
+    return $MemoryBudgetsTable(attachedDatabase, alias);
+  }
+}
+
+class MemoryBudget extends DataClass implements Insertable<MemoryBudget> {
+  final String id;
+  final String memoryId;
+  final String currencyCode;
+  final double amount;
+  const MemoryBudget({
+    required this.id,
+    required this.memoryId,
+    required this.currencyCode,
+    required this.amount,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['memory_id'] = Variable<String>(memoryId);
+    map['currency_code'] = Variable<String>(currencyCode);
+    map['amount'] = Variable<double>(amount);
+    return map;
+  }
+
+  MemoryBudgetsCompanion toCompanion(bool nullToAbsent) {
+    return MemoryBudgetsCompanion(
+      id: Value(id),
+      memoryId: Value(memoryId),
+      currencyCode: Value(currencyCode),
+      amount: Value(amount),
+    );
+  }
+
+  factory MemoryBudget.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MemoryBudget(
+      id: serializer.fromJson<String>(json['id']),
+      memoryId: serializer.fromJson<String>(json['memoryId']),
+      currencyCode: serializer.fromJson<String>(json['currencyCode']),
+      amount: serializer.fromJson<double>(json['amount']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'memoryId': serializer.toJson<String>(memoryId),
+      'currencyCode': serializer.toJson<String>(currencyCode),
+      'amount': serializer.toJson<double>(amount),
+    };
+  }
+
+  MemoryBudget copyWith({
+    String? id,
+    String? memoryId,
+    String? currencyCode,
+    double? amount,
+  }) => MemoryBudget(
+    id: id ?? this.id,
+    memoryId: memoryId ?? this.memoryId,
+    currencyCode: currencyCode ?? this.currencyCode,
+    amount: amount ?? this.amount,
+  );
+  MemoryBudget copyWithCompanion(MemoryBudgetsCompanion data) {
+    return MemoryBudget(
+      id: data.id.present ? data.id.value : this.id,
+      memoryId: data.memoryId.present ? data.memoryId.value : this.memoryId,
+      currencyCode: data.currencyCode.present
+          ? data.currencyCode.value
+          : this.currencyCode,
+      amount: data.amount.present ? data.amount.value : this.amount,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MemoryBudget(')
+          ..write('id: $id, ')
+          ..write('memoryId: $memoryId, ')
+          ..write('currencyCode: $currencyCode, ')
+          ..write('amount: $amount')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, memoryId, currencyCode, amount);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MemoryBudget &&
+          other.id == this.id &&
+          other.memoryId == this.memoryId &&
+          other.currencyCode == this.currencyCode &&
+          other.amount == this.amount);
+}
+
+class MemoryBudgetsCompanion extends UpdateCompanion<MemoryBudget> {
+  final Value<String> id;
+  final Value<String> memoryId;
+  final Value<String> currencyCode;
+  final Value<double> amount;
+  final Value<int> rowid;
+  const MemoryBudgetsCompanion({
+    this.id = const Value.absent(),
+    this.memoryId = const Value.absent(),
+    this.currencyCode = const Value.absent(),
+    this.amount = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MemoryBudgetsCompanion.insert({
+    required String id,
+    required String memoryId,
+    required String currencyCode,
+    required double amount,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       memoryId = Value(memoryId),
+       currencyCode = Value(currencyCode),
+       amount = Value(amount);
+  static Insertable<MemoryBudget> custom({
+    Expression<String>? id,
+    Expression<String>? memoryId,
+    Expression<String>? currencyCode,
+    Expression<double>? amount,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (memoryId != null) 'memory_id': memoryId,
+      if (currencyCode != null) 'currency_code': currencyCode,
+      if (amount != null) 'amount': amount,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MemoryBudgetsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? memoryId,
+    Value<String>? currencyCode,
+    Value<double>? amount,
+    Value<int>? rowid,
+  }) {
+    return MemoryBudgetsCompanion(
+      id: id ?? this.id,
+      memoryId: memoryId ?? this.memoryId,
+      currencyCode: currencyCode ?? this.currencyCode,
+      amount: amount ?? this.amount,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (memoryId.present) {
+      map['memory_id'] = Variable<String>(memoryId.value);
+    }
+    if (currencyCode.present) {
+      map['currency_code'] = Variable<String>(currencyCode.value);
+    }
+    if (amount.present) {
+      map['amount'] = Variable<double>(amount.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MemoryBudgetsCompanion(')
+          ..write('id: $id, ')
+          ..write('memoryId: $memoryId, ')
+          ..write('currencyCode: $currencyCode, ')
+          ..write('amount: $amount, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ItineraryItemsTable extends ItineraryItems
     with TableInfo<$ItineraryItemsTable, ItineraryItem> {
   @override
@@ -6589,8 +6909,27 @@ class $CategoriesTable extends Categories
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, name, type, iconName, isDefault];
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    type,
+    iconName,
+    isDefault,
+    sortOrder,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6636,6 +6975,12 @@ class $CategoriesTable extends Categories
         isDefault.isAcceptableOrUnknown(data['is_default']!, _isDefaultMeta),
       );
     }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
     return context;
   }
 
@@ -6665,6 +7010,10 @@ class $CategoriesTable extends Categories
         DriftSqlType.bool,
         data['${effectivePrefix}is_default'],
       )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
     );
   }
 
@@ -6680,12 +7029,14 @@ class Category extends DataClass implements Insertable<Category> {
   final String type;
   final String? iconName;
   final bool isDefault;
+  final int sortOrder;
   const Category({
     required this.id,
     required this.name,
     required this.type,
     this.iconName,
     required this.isDefault,
+    required this.sortOrder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6697,6 +7048,7 @@ class Category extends DataClass implements Insertable<Category> {
       map['icon_name'] = Variable<String>(iconName);
     }
     map['is_default'] = Variable<bool>(isDefault);
+    map['sort_order'] = Variable<int>(sortOrder);
     return map;
   }
 
@@ -6709,6 +7061,7 @@ class Category extends DataClass implements Insertable<Category> {
           ? const Value.absent()
           : Value(iconName),
       isDefault: Value(isDefault),
+      sortOrder: Value(sortOrder),
     );
   }
 
@@ -6723,6 +7076,7 @@ class Category extends DataClass implements Insertable<Category> {
       type: serializer.fromJson<String>(json['type']),
       iconName: serializer.fromJson<String?>(json['iconName']),
       isDefault: serializer.fromJson<bool>(json['isDefault']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
     );
   }
   @override
@@ -6734,6 +7088,7 @@ class Category extends DataClass implements Insertable<Category> {
       'type': serializer.toJson<String>(type),
       'iconName': serializer.toJson<String?>(iconName),
       'isDefault': serializer.toJson<bool>(isDefault),
+      'sortOrder': serializer.toJson<int>(sortOrder),
     };
   }
 
@@ -6743,12 +7098,14 @@ class Category extends DataClass implements Insertable<Category> {
     String? type,
     Value<String?> iconName = const Value.absent(),
     bool? isDefault,
+    int? sortOrder,
   }) => Category(
     id: id ?? this.id,
     name: name ?? this.name,
     type: type ?? this.type,
     iconName: iconName.present ? iconName.value : this.iconName,
     isDefault: isDefault ?? this.isDefault,
+    sortOrder: sortOrder ?? this.sortOrder,
   );
   Category copyWithCompanion(CategoriesCompanion data) {
     return Category(
@@ -6757,6 +7114,7 @@ class Category extends DataClass implements Insertable<Category> {
       type: data.type.present ? data.type.value : this.type,
       iconName: data.iconName.present ? data.iconName.value : this.iconName,
       isDefault: data.isDefault.present ? data.isDefault.value : this.isDefault,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
     );
   }
 
@@ -6767,13 +7125,15 @@ class Category extends DataClass implements Insertable<Category> {
           ..write('name: $name, ')
           ..write('type: $type, ')
           ..write('iconName: $iconName, ')
-          ..write('isDefault: $isDefault')
+          ..write('isDefault: $isDefault, ')
+          ..write('sortOrder: $sortOrder')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, type, iconName, isDefault);
+  int get hashCode =>
+      Object.hash(id, name, type, iconName, isDefault, sortOrder);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6782,7 +7142,8 @@ class Category extends DataClass implements Insertable<Category> {
           other.name == this.name &&
           other.type == this.type &&
           other.iconName == this.iconName &&
-          other.isDefault == this.isDefault);
+          other.isDefault == this.isDefault &&
+          other.sortOrder == this.sortOrder);
 }
 
 class CategoriesCompanion extends UpdateCompanion<Category> {
@@ -6791,6 +7152,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
   final Value<String> type;
   final Value<String?> iconName;
   final Value<bool> isDefault;
+  final Value<int> sortOrder;
   final Value<int> rowid;
   const CategoriesCompanion({
     this.id = const Value.absent(),
@@ -6798,6 +7160,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
     this.type = const Value.absent(),
     this.iconName = const Value.absent(),
     this.isDefault = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CategoriesCompanion.insert({
@@ -6806,6 +7169,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
     required String type,
     this.iconName = const Value.absent(),
     this.isDefault = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -6816,6 +7180,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
     Expression<String>? type,
     Expression<String>? iconName,
     Expression<bool>? isDefault,
+    Expression<int>? sortOrder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6824,6 +7189,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
       if (type != null) 'type': type,
       if (iconName != null) 'icon_name': iconName,
       if (isDefault != null) 'is_default': isDefault,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6834,6 +7200,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
     Value<String>? type,
     Value<String?>? iconName,
     Value<bool>? isDefault,
+    Value<int>? sortOrder,
     Value<int>? rowid,
   }) {
     return CategoriesCompanion(
@@ -6842,6 +7209,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
       type: type ?? this.type,
       iconName: iconName ?? this.iconName,
       isDefault: isDefault ?? this.isDefault,
+      sortOrder: sortOrder ?? this.sortOrder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6864,6 +7232,9 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
     if (isDefault.present) {
       map['is_default'] = Variable<bool>(isDefault.value);
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6878,6 +7249,7 @@ class CategoriesCompanion extends UpdateCompanion<Category> {
           ..write('type: $type, ')
           ..write('iconName: $iconName, ')
           ..write('isDefault: $isDefault, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -9103,6 +9475,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $MemoryLocationsTable memoryLocations = $MemoryLocationsTable(
     this,
   );
+  late final $MemoryBudgetsTable memoryBudgets = $MemoryBudgetsTable(this);
   late final $ItineraryItemsTable itineraryItems = $ItineraryItemsTable(this);
   late final $MediaAssetsTable mediaAssets = $MediaAssetsTable(this);
   late final $WalletsTable wallets = $WalletsTable(this);
@@ -9137,6 +9510,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     memories,
     memoryParticipants,
     memoryLocations,
+    memoryBudgets,
     itineraryItems,
     mediaAssets,
     wallets,
@@ -13935,6 +14309,24 @@ final class $$MemoriesTableReferences
     );
   }
 
+  static MultiTypedResultKey<$MemoryBudgetsTable, List<MemoryBudget>>
+  _memoryBudgetsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.memoryBudgets,
+    aliasName: $_aliasNameGenerator(db.memories.id, db.memoryBudgets.memoryId),
+  );
+
+  $$MemoryBudgetsTableProcessedTableManager get memoryBudgetsRefs {
+    final manager = $$MemoryBudgetsTableTableManager(
+      $_db,
+      $_db.memoryBudgets,
+    ).filter((f) => f.memoryId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_memoryBudgetsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
   static MultiTypedResultKey<$ItineraryItemsTable, List<ItineraryItem>>
   _itineraryItemsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.itineraryItems,
@@ -14114,6 +14506,31 @@ class $$MemoriesTableFilterComposer
           }) => $$MemoryLocationsTableFilterComposer(
             $db: $db,
             $table: $db.memoryLocations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> memoryBudgetsRefs(
+    Expression<bool> Function($$MemoryBudgetsTableFilterComposer f) f,
+  ) {
+    final $$MemoryBudgetsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.memoryBudgets,
+      getReferencedColumn: (t) => t.memoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoryBudgetsTableFilterComposer(
+            $db: $db,
+            $table: $db.memoryBudgets,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -14388,6 +14805,31 @@ class $$MemoriesTableAnnotationComposer
     return f(composer);
   }
 
+  Expression<T> memoryBudgetsRefs<T extends Object>(
+    Expression<T> Function($$MemoryBudgetsTableAnnotationComposer a) f,
+  ) {
+    final $$MemoryBudgetsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.memoryBudgets,
+      getReferencedColumn: (t) => t.memoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoryBudgetsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memoryBudgets,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
   Expression<T> itineraryItemsRefs<T extends Object>(
     Expression<T> Function($$ItineraryItemsTableAnnotationComposer a) f,
   ) {
@@ -14505,6 +14947,7 @@ class $$MemoriesTableTableManager
           PrefetchHooks Function({
             bool memoryParticipantsRefs,
             bool memoryLocationsRefs,
+            bool memoryBudgetsRefs,
             bool itineraryItemsRefs,
             bool mediaAssetsRefs,
             bool transactionsRefs,
@@ -14590,6 +15033,7 @@ class $$MemoriesTableTableManager
               ({
                 memoryParticipantsRefs = false,
                 memoryLocationsRefs = false,
+                memoryBudgetsRefs = false,
                 itineraryItemsRefs = false,
                 mediaAssetsRefs = false,
                 transactionsRefs = false,
@@ -14600,6 +15044,7 @@ class $$MemoriesTableTableManager
                   explicitlyWatchedTables: [
                     if (memoryParticipantsRefs) db.memoryParticipants,
                     if (memoryLocationsRefs) db.memoryLocations,
+                    if (memoryBudgetsRefs) db.memoryBudgets,
                     if (itineraryItemsRefs) db.itineraryItems,
                     if (mediaAssetsRefs) db.mediaAssets,
                     if (transactionsRefs) db.transactions,
@@ -14644,6 +15089,27 @@ class $$MemoriesTableTableManager
                                 table,
                                 p0,
                               ).memoryLocationsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.memoryId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (memoryBudgetsRefs)
+                        await $_getPrefetchedData<
+                          Memory,
+                          $MemoriesTable,
+                          MemoryBudget
+                        >(
+                          currentTable: table,
+                          referencedTable: $$MemoriesTableReferences
+                              ._memoryBudgetsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$MemoriesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).memoryBudgetsRefs,
                           referencedItemsForCurrentItem:
                               (item, referencedItems) => referencedItems.where(
                                 (e) => e.memoryId == item.id,
@@ -14749,6 +15215,7 @@ typedef $$MemoriesTableProcessedTableManager =
       PrefetchHooks Function({
         bool memoryParticipantsRefs,
         bool memoryLocationsRefs,
+        bool memoryBudgetsRefs,
         bool itineraryItemsRefs,
         bool mediaAssetsRefs,
         bool transactionsRefs,
@@ -15449,6 +15916,312 @@ typedef $$MemoryLocationsTableProcessedTableManager =
       $$MemoryLocationsTableUpdateCompanionBuilder,
       (MemoryLocation, $$MemoryLocationsTableReferences),
       MemoryLocation,
+      PrefetchHooks Function({bool memoryId})
+    >;
+typedef $$MemoryBudgetsTableCreateCompanionBuilder =
+    MemoryBudgetsCompanion Function({
+      required String id,
+      required String memoryId,
+      required String currencyCode,
+      required double amount,
+      Value<int> rowid,
+    });
+typedef $$MemoryBudgetsTableUpdateCompanionBuilder =
+    MemoryBudgetsCompanion Function({
+      Value<String> id,
+      Value<String> memoryId,
+      Value<String> currencyCode,
+      Value<double> amount,
+      Value<int> rowid,
+    });
+
+final class $$MemoryBudgetsTableReferences
+    extends BaseReferences<_$AppDatabase, $MemoryBudgetsTable, MemoryBudget> {
+  $$MemoryBudgetsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $MemoriesTable _memoryIdTable(_$AppDatabase db) =>
+      db.memories.createAlias(
+        $_aliasNameGenerator(db.memoryBudgets.memoryId, db.memories.id),
+      );
+
+  $$MemoriesTableProcessedTableManager get memoryId {
+    final $_column = $_itemColumn<String>('memory_id')!;
+
+    final manager = $$MemoriesTableTableManager(
+      $_db,
+      $_db.memories,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_memoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$MemoryBudgetsTableFilterComposer
+    extends Composer<_$AppDatabase, $MemoryBudgetsTable> {
+  $$MemoryBudgetsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get currencyCode => $composableBuilder(
+    column: $table.currencyCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get amount => $composableBuilder(
+    column: $table.amount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$MemoriesTableFilterComposer get memoryId {
+    final $$MemoriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableFilterComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoryBudgetsTableOrderingComposer
+    extends Composer<_$AppDatabase, $MemoryBudgetsTable> {
+  $$MemoryBudgetsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get currencyCode => $composableBuilder(
+    column: $table.currencyCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get amount => $composableBuilder(
+    column: $table.amount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$MemoriesTableOrderingComposer get memoryId {
+    final $$MemoriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoryBudgetsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MemoryBudgetsTable> {
+  $$MemoryBudgetsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get currencyCode => $composableBuilder(
+    column: $table.currencyCode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get amount =>
+      $composableBuilder(column: $table.amount, builder: (column) => column);
+
+  $$MemoriesTableAnnotationComposer get memoryId {
+    final $$MemoriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.memoryId,
+      referencedTable: $db.memories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MemoriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.memories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MemoryBudgetsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MemoryBudgetsTable,
+          MemoryBudget,
+          $$MemoryBudgetsTableFilterComposer,
+          $$MemoryBudgetsTableOrderingComposer,
+          $$MemoryBudgetsTableAnnotationComposer,
+          $$MemoryBudgetsTableCreateCompanionBuilder,
+          $$MemoryBudgetsTableUpdateCompanionBuilder,
+          (MemoryBudget, $$MemoryBudgetsTableReferences),
+          MemoryBudget,
+          PrefetchHooks Function({bool memoryId})
+        > {
+  $$MemoryBudgetsTableTableManager(_$AppDatabase db, $MemoryBudgetsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MemoryBudgetsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MemoryBudgetsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MemoryBudgetsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> memoryId = const Value.absent(),
+                Value<String> currencyCode = const Value.absent(),
+                Value<double> amount = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MemoryBudgetsCompanion(
+                id: id,
+                memoryId: memoryId,
+                currencyCode: currencyCode,
+                amount: amount,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String memoryId,
+                required String currencyCode,
+                required double amount,
+                Value<int> rowid = const Value.absent(),
+              }) => MemoryBudgetsCompanion.insert(
+                id: id,
+                memoryId: memoryId,
+                currencyCode: currencyCode,
+                amount: amount,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$MemoryBudgetsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({memoryId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (memoryId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.memoryId,
+                                referencedTable: $$MemoryBudgetsTableReferences
+                                    ._memoryIdTable(db),
+                                referencedColumn: $$MemoryBudgetsTableReferences
+                                    ._memoryIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$MemoryBudgetsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MemoryBudgetsTable,
+      MemoryBudget,
+      $$MemoryBudgetsTableFilterComposer,
+      $$MemoryBudgetsTableOrderingComposer,
+      $$MemoryBudgetsTableAnnotationComposer,
+      $$MemoryBudgetsTableCreateCompanionBuilder,
+      $$MemoryBudgetsTableUpdateCompanionBuilder,
+      (MemoryBudget, $$MemoryBudgetsTableReferences),
+      MemoryBudget,
       PrefetchHooks Function({bool memoryId})
     >;
 typedef $$ItineraryItemsTableCreateCompanionBuilder =
@@ -16563,6 +17336,7 @@ typedef $$CategoriesTableCreateCompanionBuilder =
       required String type,
       Value<String?> iconName,
       Value<bool> isDefault,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 typedef $$CategoriesTableUpdateCompanionBuilder =
@@ -16572,6 +17346,7 @@ typedef $$CategoriesTableUpdateCompanionBuilder =
       Value<String> type,
       Value<String?> iconName,
       Value<bool> isDefault,
+      Value<int> sortOrder,
       Value<int> rowid,
     });
 
@@ -16635,6 +17410,11 @@ class $$CategoriesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> transactionsRefs(
     Expression<bool> Function($$TransactionsTableFilterComposer f) f,
   ) {
@@ -16694,6 +17474,11 @@ class $$CategoriesTableOrderingComposer
     column: $table.isDefault,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CategoriesTableAnnotationComposer
@@ -16719,6 +17504,9 @@ class $$CategoriesTableAnnotationComposer
 
   GeneratedColumn<bool> get isDefault =>
       $composableBuilder(column: $table.isDefault, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   Expression<T> transactionsRefs<T extends Object>(
     Expression<T> Function($$TransactionsTableAnnotationComposer a) f,
@@ -16779,6 +17567,7 @@ class $$CategoriesTableTableManager
                 Value<String> type = const Value.absent(),
                 Value<String?> iconName = const Value.absent(),
                 Value<bool> isDefault = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CategoriesCompanion(
                 id: id,
@@ -16786,6 +17575,7 @@ class $$CategoriesTableTableManager
                 type: type,
                 iconName: iconName,
                 isDefault: isDefault,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -16795,6 +17585,7 @@ class $$CategoriesTableTableManager
                 required String type,
                 Value<String?> iconName = const Value.absent(),
                 Value<bool> isDefault = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CategoriesCompanion.insert(
                 id: id,
@@ -16802,6 +17593,7 @@ class $$CategoriesTableTableManager
                 type: type,
                 iconName: iconName,
                 isDefault: isDefault,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -19297,6 +20089,8 @@ class $AppDatabaseManager {
       $$MemoryParticipantsTableTableManager(_db, _db.memoryParticipants);
   $$MemoryLocationsTableTableManager get memoryLocations =>
       $$MemoryLocationsTableTableManager(_db, _db.memoryLocations);
+  $$MemoryBudgetsTableTableManager get memoryBudgets =>
+      $$MemoryBudgetsTableTableManager(_db, _db.memoryBudgets);
   $$ItineraryItemsTableTableManager get itineraryItems =>
       $$ItineraryItemsTableTableManager(_db, _db.itineraryItems);
   $$MediaAssetsTableTableManager get mediaAssets =>

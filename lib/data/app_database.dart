@@ -30,6 +30,7 @@ String newId() => _uuid.v4();
     Memories,
     MemoryParticipants,
     MemoryLocations,
+    MemoryBudgets,
     ItineraryItems,
     MediaAssets,
     Wallets,
@@ -47,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -113,6 +114,88 @@ class AppDatabase extends _$AppDatabase {
               if (!hasBudget) {
                 await customStatement(
                   'ALTER TABLE "memories" ADD COLUMN "budget" REAL',
+                );
+              }
+            }
+            if (v == 9) {
+              // Data-only cleanup after the standalone expenses module was
+              // removed. No schema change — the Wallets/TransactionTags tables
+              // and Transactions.walletId column stay in place, dormant.
+              //
+              // 1. Purge orphan (non-memory) transactions: they were created by
+              //    the deleted standalone ledger and are now unreachable in the
+              //    UI. Delete dependent rows first to stay FK-safe.
+              final orphanIds = await (select(transactions)
+                    ..where((t) => t.memoryId.isNull()))
+                  .get()
+                  .then((rows) => rows.map((t) => t.id).toList());
+              if (orphanIds.isNotEmpty) {
+                await (delete(transactionSplits)
+                      ..where((t) => t.transactionId.isIn(orphanIds)))
+                    .go();
+                await (delete(transactionTags)
+                      ..where((t) => t.transactionId.isIn(orphanIds)))
+                    .go();
+                await (delete(transactions)
+                      ..where((t) => t.memoryId.isNull()))
+                    .go();
+              }
+              // 2. Wallets are gone from the product. Detach any surviving
+              //    (memory-linked) transaction from its wallet, then drop all
+              //    wallet rows.
+              await (update(transactions)
+                    ..where((t) => t.walletId.isNotNull()))
+                  .write(const TransactionsCompanion(
+                      walletId: Value<String?>(null)));
+              await delete(wallets).go();
+            }
+            if (v == 10) {
+              // Per-currency budgets + user-sortable categories.
+              await m.createTable(memoryBudgets);
+              await m.addColumn(categories, categories.sortOrder);
+
+              // Number existing categories in their current order (per type)
+              // so the grid keeps looking the same until the user reorders.
+              final cats = await select(categories).get();
+              final byType = <String, int>{};
+              for (final c in cats) {
+                final next = byType[c.type] ?? 0;
+                await (update(categories)..where((t) => t.id.equals(c.id)))
+                    .write(CategoriesCompanion(sortOrder: Value(next)));
+                byType[c.type] = next + 1;
+              }
+
+              // Migrate the legacy single-number Memories.budget into one
+              // MemoryBudgets row. Currency: the memory's dominant transaction
+              // currency, falling back to MYR. The old column stays dormant.
+              final budgeted = await (select(memories)
+                    ..where((t) => t.budget.isNotNull()))
+                  .get();
+              for (final mem in budgeted) {
+                if (mem.budget == null || mem.budget! <= 0) continue;
+                final txs = await (select(transactions)
+                      ..where((t) => t.memoryId.equals(mem.id)))
+                    .get();
+                final counts = <String, int>{};
+                for (final tx in txs) {
+                  counts[tx.currencyCode] =
+                      (counts[tx.currencyCode] ?? 0) + 1;
+                }
+                var currency = 'MYR';
+                var best = 0;
+                counts.forEach((code, n) {
+                  if (n > best) {
+                    best = n;
+                    currency = code;
+                  }
+                });
+                await into(memoryBudgets).insert(
+                  MemoryBudgetsCompanion.insert(
+                    id: newId(),
+                    memoryId: mem.id,
+                    currencyCode: currency,
+                    amount: mem.budget!,
+                  ),
                 );
               }
             }
@@ -190,22 +273,25 @@ class AppDatabase extends _$AppDatabase {
       ('收款', '📬'),
     ];
 
-    for (final (name, icon) in expenseCategories) {
+    // Seed order == display order (categories are shown by sortOrder).
+    for (final (i, (name, icon)) in expenseCategories.indexed) {
       await into(categories).insert(CategoriesCompanion.insert(
         id: newId(),
         name: name,
         type: 'expense',
         iconName: Value(icon),
         isDefault: const Value(true),
+        sortOrder: Value(i),
       ));
     }
-    for (final (name, icon) in incomeCategories) {
+    for (final (i, (name, icon)) in incomeCategories.indexed) {
       await into(categories).insert(CategoriesCompanion.insert(
         id: newId(),
         name: name,
         type: 'income',
         iconName: Value(icon),
         isDefault: const Value(true),
+        sortOrder: Value(i),
       ));
     }
   }

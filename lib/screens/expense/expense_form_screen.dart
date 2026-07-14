@@ -8,73 +8,65 @@ import '../../providers/database_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/memory_provider.dart';
 import '../../providers/person_provider.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/app_theme_extension.dart';
+import '../../utils/money.dart';
+import '../../utils/split_math.dart';
 
 const _kCurrencies = ['MYR', 'SGD', 'USD', 'EUR', 'CNY'];
-const _kCurrencySymbols = {
-  'MYR': 'RM',
-  'SGD': 'S\$',
-  'USD': '\$',
-  'EUR': '€',
-  'CNY': '¥',
-};
 
 const _kSplitTypes = ['personal', 'split_aa', 'treat'];
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
   final String? transactionId;
   final String? memoryId;
-  final String? walletId;
 
   const ExpenseFormScreen({
     super.key,
     this.transactionId,
     this.memoryId,
-    this.walletId,
   });
 
   @override
   ConsumerState<ExpenseFormScreen> createState() => _ExpenseFormState();
 }
 
-class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabs;
+class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
   final _noteCtrl = TextEditingController();
 
-  bool _isExpense = true;
+  // Kept only so editing a legacy income row doesn't silently flip it to an
+  // expense on save. New transactions are always 'expense' — the income tab
+  // was removed when the standalone ledger split off.
+  String _type = 'expense';
   String _categoryId = '';
+  // Amount is an arithmetic expression, e.g. "12.50+3.9-1". The +/- numpad
+  // keys append operators; "=" collapses it before saving.
   String _amountStr = '0';
   String _currency = 'MYR';
   DateTime _date = DateTime.now();
-  String? _walletId;
   String? _memoryId;
   String _splitType = 'personal';
   String? _payerPersonId;
-  final Set<String> _splitParticipants = {};
+  // People EXCLUDED from an AA split (default: nobody excluded → everyone shares).
+  final Set<String> _excludedIds = {};
+  // When editing a saved AA expense, we reconstruct the exclude set from the
+  // persisted sharers once the trip roster has resolved (D1).
+  Set<String> _loadedSharerIds = {};
+  bool _pendingExcludeInit = false;
   bool _saving = false;
   bool _loading = true;
+
+  AppThemeExtension get _t =>
+      Theme.of(context).extension<AppThemeExtension>()!;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
-    _tabs.addListener(() {
-      if (!_tabs.indexIsChanging) {
-        setState(() {
-          _isExpense = _tabs.index == 0;
-          _categoryId = '';
-        });
-      }
-    });
-    _walletId = widget.walletId;
     _memoryId = widget.memoryId;
     _initSelf();
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
     _noteCtrl.dispose();
     super.dispose();
   }
@@ -82,10 +74,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
   Future<void> _initSelf() async {
     final self = await ref.read(databaseProvider).personDao.getSelfPerson();
     if (self != null && mounted) {
-      setState(() {
-        _payerPersonId = self.id;
-        _splitParticipants.add(self.id);
-      });
+      setState(() => _payerPersonId = self.id);
     }
     if (widget.transactionId != null) await _loadExisting();
     if (mounted) setState(() => _loading = false);
@@ -97,8 +86,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
     if (tx == null || !mounted) return;
     final splits = await db.expenseDao.getSplits(widget.transactionId!);
     setState(() {
-      _isExpense = tx.type == 'expense';
-      _tabs.index = _isExpense ? 0 : 1;
+      _type = tx.type;
       _categoryId = tx.categoryId;
       _amountStr = tx.amount
           .toStringAsFixed(2)
@@ -106,15 +94,58 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
       _currency = tx.currencyCode;
       _date = tx.txnDate;
       _noteCtrl.text = tx.note ?? '';
-      _walletId = tx.walletId;
       _memoryId = tx.memoryId;
       _splitType = tx.splitType;
       if (tx.payerPersonId != null) _payerPersonId = tx.payerPersonId;
-      if (splits.isNotEmpty) {
-        _splitParticipants.clear();
-        _splitParticipants.addAll(splits.map((s) => s.personId));
+      if (tx.splitType == 'split_aa' && splits.isNotEmpty) {
+        // Defer exclude reconstruction until the roster resolves in build().
+        _loadedSharerIds = splits.map((s) => s.personId).toSet();
+        _pendingExcludeInit = true;
       }
     });
+  }
+
+  // ── Amount expression helpers ─────────────────────────────────────────────
+
+  /// Whether the expression still has an operator to collapse ("12+3").
+  bool get _hasPendingOp =>
+      _amountStr.contains('+') || _amountStr.contains('-');
+
+  /// The operand currently being typed (after the last operator).
+  String get _currentOperand {
+    final i = _amountStr.lastIndexOf(RegExp(r'[+\-]'));
+    return i == -1 ? _amountStr : _amountStr.substring(i + 1);
+  }
+
+  /// Sums the signed operands. "12.5+3-1.2" → 14.3 (round-half-up 2dp).
+  double _evaluate() {
+    var total = 0.0;
+    var sign = 1;
+    var buf = '';
+    void flush() {
+      if (buf.isNotEmpty) total += sign * (double.tryParse(buf) ?? 0);
+      buf = '';
+    }
+
+    for (final ch in _amountStr.split('')) {
+      if (ch == '+' || ch == '-') {
+        flush();
+        sign = ch == '+' ? 1 : -1;
+      } else {
+        buf += ch;
+      }
+    }
+    flush();
+    return roundHalfUp(total);
+  }
+
+  static String _fmtNum(double v) =>
+      v.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '');
+
+  void _collapseExpression() {
+    final result = _evaluate();
+    // A non-positive running total is not a valid expense — reset.
+    _amountStr = result > 0 ? _fmtNum(result) : '0';
   }
 
   void _numpadPress(String key) {
@@ -127,21 +158,31 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
             _amountStr = _amountStr.substring(0, _amountStr.length - 1);
           }
         case '.':
-          if (!_amountStr.contains('.')) _amountStr += '.';
+          if (_currentOperand.contains('.')) return;
+          // Starting an operand with "." reads as "0."
+          _amountStr += _currentOperand.isEmpty ? '0.' : '.';
         case '+':
-          _tabs.index = 1;
-          _isExpense = false;
-          _categoryId = '';
         case '-':
-          _tabs.index = 0;
-          _isExpense = true;
-          _categoryId = '';
-        default:
-          if (_amountStr == '0') {
-            _amountStr = key;
-          } else if (_amountStr.length < 10) {
-            final dotIdx = _amountStr.indexOf('.');
-            if (dotIdx == -1 || _amountStr.length - dotIdx <= 2) {
+          if (_amountStr.length > 24) return;
+          final last = _amountStr[_amountStr.length - 1];
+          if (last == '+' || last == '-') {
+            // Retyping the operator swaps it.
+            _amountStr = _amountStr.substring(0, _amountStr.length - 1) + key;
+          } else if (last == '.') {
+            _amountStr =
+                _amountStr.substring(0, _amountStr.length - 1) + key;
+          } else {
+            _amountStr += key;
+          }
+        default: // digit
+          final op = _currentOperand;
+          if (op == '0') {
+            // Replace a lone leading zero within the current operand.
+            _amountStr =
+                _amountStr.substring(0, _amountStr.length - 1) + key;
+          } else if (op.length < 9) {
+            final dotIdx = op.indexOf('.');
+            if (dotIdx == -1 || op.length - dotIdx <= 2) {
               _amountStr += key;
             }
           }
@@ -151,6 +192,8 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
 
   Future<void> _save() async {
     final l10n = context.l10n;
+    // Defensive: collapse any dangling expression before validating.
+    if (_hasPendingOp) setState(_collapseExpression);
     final amount = double.tryParse(_amountStr) ?? 0;
     if (amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -167,28 +210,40 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
     setState(() => _saving = true);
     try {
       final note = _noteCtrl.text.trim();
-      final splits =
-          _splitType == 'split_aa' && _splitParticipants.isNotEmpty
-              ? _splitParticipants
-                  .map((pid) => (
-                        personId: pid,
-                        shareType: 'equal',
-                        shareAmount: amount / _splitParticipants.length,
-                      ))
-                  .toList()
-              : <({String personId, String shareType, double shareAmount})>[];
+      final currency = normalizeCurrency(_currency); // D7
+
+      // Split modes are only valid on a memory-linked expense; otherwise 个人.
+      final effectiveSplit = _memoryId == null ? 'personal' : _splitType;
+
+      var splits =
+          const <({String personId, String shareType, double shareAmount})>[];
+      if (effectiveSplit == 'split_aa' && _memoryId != null) {
+        final rosterIds = ref
+            .read(memoryParticipantPersonsProvider(_memoryId!))
+            .map((p) => p.id)
+            .toList();
+        final sharers = computeSharerIds(
+          rosterIds: rosterIds,
+          excludedIds: _excludedIds,
+          payerId: _payerPersonId,
+        );
+        final perHead = perHeadShare(amount, sharers.length);
+        splits = [
+          for (final pid in sharers)
+            (personId: pid, shareType: 'equal', shareAmount: perHead),
+        ];
+      }
 
       await ref.read(expenseNotifierProvider.notifier).saveTransaction(
             existingId: widget.transactionId,
-            walletId: _walletId,
             memoryId: _memoryId,
-            type: _isExpense ? 'expense' : 'income',
+            type: _type,
             categoryId: _categoryId,
             amount: amount,
-            currencyCode: _currency,
+            currencyCode: currency,
             txnDate: _date,
             note: note.isEmpty ? null : note,
-            splitType: _splitType,
+            splitType: effectiveSplit,
             payerPersonId: _payerPersonId,
             splits: splits,
           );
@@ -230,29 +285,44 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
     }
 
     final l10n = context.l10n;
-    final categoriesAsync =
-        ref.watch(categoriesProvider(_isExpense ? 'expense' : 'income'));
-    final walletsAsync = ref.watch(walletsProvider);
+    final t = _t;
+    final categoriesAsync = ref.watch(categoriesProvider(_type));
     final memoriesAsync = ref.watch(memoriesProvider);
-    final personsAsync = ref.watch(personsProvider);
-    final symbol = _kCurrencySymbols[_currency] ?? _currency;
+    final symbol = currencySymbol(_currency);
+
+    // Reconstruct the exclude set for an edited AA expense once the roster
+    // resolves (D1). Safe to run in build: it only fires while the pending flag
+    // is set and stops after the first non-empty roster.
+    if (_pendingExcludeInit && _memoryId != null) {
+      final rosterIds = ref
+          .read(memoryParticipantPersonsProvider(_memoryId!))
+          .map((p) => p.id)
+          .toList();
+      if (rosterIds.isNotEmpty) {
+        _excludedIds
+          ..clear()
+          ..addAll(reconstructExcluded(
+              rosterIds: rosterIds, sharerIds: _loadedSharerIds));
+        _pendingExcludeInit = false;
+      }
+    }
 
     return Scaffold(
-      // Transparent — gradient from main.dart shows through the scrollable area.
+      backgroundColor: t.backgroundColor,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: t.surfaceColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: AppColors.textSecondary),
+          icon: Icon(Icons.close, color: t.textSecondary),
           onPressed: () => context.pop(),
         ),
         title: GestureDetector(
           onTap: _pickDate,
           child: Text(
             _formatDate(_date, l10n),
-            style: const TextStyle(
-              color: AppColors.textPrimary,
+            style: TextStyle(
+              color: t.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -271,10 +341,8 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_currency,
-                      style: const TextStyle(color: AppColors.textSecondary)),
-                  const Icon(Icons.arrow_drop_down,
-                      color: AppColors.textSecondary),
+                  Text(_currency, style: TextStyle(color: t.textSecondary)),
+                  Icon(Icons.arrow_drop_down, color: t.textSecondary),
                 ],
               ),
             ),
@@ -283,42 +351,28 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
       ),
       body: Column(
         children: [
-          // Type tabs
-          Container(
-            color: AppColors.surface,
-            child: TabBar(
-              controller: _tabs,
-              labelColor: AppColors.primary,
-              unselectedLabelColor:
-                  AppColors.textSecondary.withValues(alpha: 0.6),
-              indicatorColor: AppColors.primary,
-              tabs: [
-                Tab(text: l10n.expenseFormExpense),
-                Tab(text: l10n.expenseFormIncome),
-              ],
-            ),
-          ),
-          // Scrollable content sections (shows gradient bg through transparent scaffold)
+          // Scrollable content sections
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildCategorySection(categoriesAsync, l10n),
-                  const Divider(height: 1, color: Color(0xFFEEEEEE)),
-                  _buildWalletSection(walletsAsync.value ?? [], l10n),
-                  const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                  Divider(height: 1, color: t.borderColor),
                   _buildMemorySection(memoriesAsync, l10n),
-                  const Divider(height: 1, color: Color(0xFFEEEEEE)),
-                  _buildSplitSection(personsAsync, l10n),
+                  Divider(height: 1, color: t.borderColor),
+                  _buildSplitSection(l10n),
                   const SizedBox(height: 20),
                 ],
               ),
             ),
           ),
-          // Note + amount row — warm ivory background
+          // Note + amount row
           Container(
-            color: AppColors.background,
+            decoration: BoxDecoration(
+              color: t.surfaceColor,
+              border: Border(top: BorderSide(color: t.borderColor)),
+            ),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: Row(
               children: [
@@ -328,8 +382,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                     decoration: InputDecoration(
                       hintText: l10n.expenseFormNoteHint,
                       hintStyle: TextStyle(
-                        color:
-                            AppColors.textSecondary.withValues(alpha: 0.5),
+                        color: t.textSecondary.withValues(alpha: 0.5),
                         fontSize: 13,
                       ),
                       border: InputBorder.none,
@@ -339,26 +392,26 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                           const EdgeInsets.symmetric(vertical: 4),
                       isDense: true,
                     ),
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 13),
+                    style: TextStyle(color: t.textPrimary, fontSize: 13),
                     maxLines: 1,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   '$symbol $_amountStr',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                    // Highlight while an expression is pending collapse.
+                    color: _hasPendingOp ? t.accentColor : t.textPrimary,
                   ),
                 ),
               ],
             ),
           ),
-          // Numpad — Psyduck-yellow background
+          // Numpad
           Container(
-            color: AppColors.emphasis,
+            color: t.backgroundColor,
             child: Column(
               children: [
                 _buildNumpad(context, l10n),
@@ -376,6 +429,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
 
   Widget _buildCategorySection(
       AsyncValue<List<Category>> categoriesAsync, AppLocalizations l10n) {
+    final t = _t;
     return categoriesAsync.when(
       loading: () => const SizedBox(
           height: 80, child: Center(child: CircularProgressIndicator())),
@@ -396,8 +450,36 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
             mainAxisSpacing: 4,
             crossAxisSpacing: 2,
           ),
-          itemCount: cats.length,
+          // Trailing cell jumps to category management.
+          itemCount: cats.length + 1,
           itemBuilder: (context, i) {
+            if (i == cats.length) {
+              return GestureDetector(
+                onTap: () => context.push('/settings/expense-categories'),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: t.borderColor, width: 1.5),
+                      ),
+                      child: Icon(Icons.settings_outlined,
+                          size: 20, color: t.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '管理',
+                      style: TextStyle(
+                          fontSize: 10, color: t.textSecondary),
+                    ),
+                  ],
+                ),
+              );
+            }
             final cat = cats[i];
             final selected = cat.id == _categoryId;
             return GestureDetector(
@@ -410,13 +492,11 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                     height: 44,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      // Chip-sand bg; coral-orange border when selected
                       color: selected
-                          ? AppColors.primary.withValues(alpha: 0.15)
-                          : AppColors.chipBg,
+                          ? t.accentColor.withValues(alpha: 0.15)
+                          : t.mutedColor,
                       border: selected
-                          ? Border.all(
-                              color: AppColors.primary, width: 2)
+                          ? Border.all(color: t.accentColor, width: 2)
                           : null,
                     ),
                     child: Center(
@@ -431,12 +511,9 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                     cat.name,
                     style: TextStyle(
                       fontSize: 10,
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                      fontWeight: selected
-                          ? FontWeight.w600
-                          : FontWeight.normal,
+                      color: selected ? t.accentColor : t.textSecondary,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.normal,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 1,
@@ -451,77 +528,11 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
     );
   }
 
-  // ── Wallet picker ───────────────────────────────────────────────────────────
-
-  Widget _buildWalletSection(List<Wallet> wallets, AppLocalizations l10n) {
-    final selectedWallet =
-        wallets.where((w) => w.id == _walletId).firstOrNull;
-    return ListTile(
-      dense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-      leading: Icon(
-        Icons.account_balance_wallet_outlined,
-        color: AppColors.textSecondary.withValues(alpha: 0.7),
-        size: 20,
-      ),
-      title: Text(
-        selectedWallet?.name ?? l10n.expenseFormNoWallet,
-        style: TextStyle(
-          fontSize: 14,
-          color: selectedWallet != null
-              ? AppColors.textPrimary
-              : AppColors.textSecondary.withValues(alpha: 0.5),
-        ),
-      ),
-      subtitle: selectedWallet != null
-          ? Text(selectedWallet.currencyCode,
-              style: const TextStyle(fontSize: 11))
-          : null,
-      trailing: Icon(Icons.chevron_right,
-          size: 18,
-          color: AppColors.textSecondary.withValues(alpha: 0.4)),
-      onTap: wallets.isEmpty ? null : () => _showWalletPicker(wallets, l10n),
-    );
-  }
-
-  void _showWalletPicker(List<Wallet> wallets, AppLocalizations l10n) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.do_not_disturb_alt_outlined),
-            title: Text(l10n.expenseFormNoWallet),
-            onTap: () {
-              setState(() => _walletId = null);
-              Navigator.pop(context);
-            },
-          ),
-          ...wallets.map((w) => ListTile(
-                leading: const Icon(
-                    Icons.account_balance_wallet_outlined),
-                title: Text(w.name),
-                subtitle: Text(w.currencyCode),
-                trailing: _walletId == w.id
-                    ? const Icon(Icons.check, color: AppColors.primary)
-                    : null,
-                onTap: () {
-                  setState(() => _walletId = w.id);
-                  Navigator.pop(context);
-                },
-              )),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-
   // ── Memory section ──────────────────────────────────────────────────────────
 
   Widget _buildMemorySection(
       AsyncValue<List<Memory>> memoriesAsync, AppLocalizations l10n) {
+    final t = _t;
     final memories = memoriesAsync.value;
     if (memories == null || memories.isEmpty) return const SizedBox.shrink();
 
@@ -533,14 +544,12 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
           child: Row(
             children: [
               Icon(Icons.photo_album_outlined,
-                  size: 18,
-                  color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                  size: 18, color: t.textSecondary.withValues(alpha: 0.6)),
               const SizedBox(width: 6),
               Text('记忆',
                   style: TextStyle(
                       fontSize: 13,
-                      color:
-                          AppColors.textSecondary.withValues(alpha: 0.7))),
+                      color: t.textSecondary.withValues(alpha: 0.7))),
             ],
           ),
         ),
@@ -550,19 +559,8 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ChoiceChip(
-                  label:
-                      const Text('无', style: TextStyle(fontSize: 12)),
-                  selected: _memoryId == null,
-                  onSelected: (_) =>
-                      setState(() => _memoryId = null),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
+              // No "无" option: an expense must belong to a memory, otherwise it
+              // becomes unreachable (there's no standalone expense list anymore).
               ...memories.map((m) => Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
@@ -570,8 +568,11 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                           style: const TextStyle(fontSize: 12),
                           overflow: TextOverflow.ellipsis),
                       selected: _memoryId == m.id,
-                      onSelected: (_) =>
-                          setState(() => _memoryId = m.id),
+                      // Switching trips invalidates the previous roster's exclude set.
+                      onSelected: (_) => setState(() {
+                        if (_memoryId != m.id) _excludedIds.clear();
+                        _memoryId = m.id;
+                      }),
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       visualDensity: VisualDensity.compact,
                     ),
@@ -586,8 +587,16 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
 
   // ── Split section ───────────────────────────────────────────────────────────
 
-  Widget _buildSplitSection(
-      AsyncValue<List<Person>> personsAsync, AppLocalizations l10n) {
+  Widget _buildSplitSection(AppLocalizations l10n) {
+    final t = _t;
+    // Split modes require the expense to be tagged to a 记忆 (A). Without one,
+    // only 个人 is allowed; the other two chips render disabled.
+    final linked = _memoryId != null;
+    if (!linked && _splitType != 'personal') {
+      // Safety net: keep state consistent if we arrive here un-linked.
+      _splitType = 'personal';
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -596,14 +605,19 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
           child: Row(
             children: [
               Icon(Icons.people_outline,
-                  size: 18,
-                  color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                  size: 18, color: t.textSecondary.withValues(alpha: 0.6)),
               const SizedBox(width: 6),
               Text(l10n.txFormSplitTypeLabel,
                   style: TextStyle(
                       fontSize: 13,
-                      color:
-                          AppColors.textSecondary.withValues(alpha: 0.7))),
+                      color: t.textSecondary.withValues(alpha: 0.7))),
+              if (!linked) ...[
+                const SizedBox(width: 8),
+                Text('（关联记忆后可分摊）',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: t.textSecondary.withValues(alpha: 0.5))),
+              ],
             ],
           ),
         ),
@@ -611,74 +625,169 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Wrap(
             spacing: 8,
-            children: _kSplitTypes
-                .map((s) => ChoiceChip(
-                      label: Text(l10n.splitTypeName(s),
-                          style: const TextStyle(fontSize: 12)),
-                      selected: _splitType == s,
-                      onSelected: (_) =>
-                          setState(() => _splitType = s),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    ))
-                .toList(),
+            children: _kSplitTypes.map((s) {
+              // 个人 always enabled; AA制/请客 only when linked to a 记忆.
+              final enabled = linked || s == 'personal';
+              return ChoiceChip(
+                label: Text(l10n.splitTypeName(s),
+                    style: const TextStyle(fontSize: 12)),
+                selected: _splitType == s,
+                onSelected: enabled
+                    ? (_) => setState(() {
+                          _splitType = s;
+                          if (s != 'split_aa') _excludedIds.clear();
+                        })
+                    : null,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(),
           ),
         ),
-        if (_splitType == 'split_aa') _buildParticipantPicker(personsAsync),
+        if (linked && _splitType == 'split_aa') _buildAaControls(l10n),
         const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _buildParticipantPicker(AsyncValue<List<Person>> personsAsync) {
-    return personsAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-      data: (persons) {
-        if (persons.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+  // Payer picker + exclude multiselect + live per-head preview, sourced from
+  // the trip roster (people from 人脉 via MemoryParticipants, "Me" included).
+  Widget _buildAaControls(AppLocalizations l10n) {
+    final t = _t;
+    final roster = ref.watch(memoryParticipantPersonsProvider(_memoryId!));
+    if (roster.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text('暂无参与者，请先在记忆中添加同行人',
+            style: TextStyle(fontSize: 11, color: t.textSecondary)),
+      );
+    }
+
+    final rosterIds = roster.map((p) => p.id).toList();
+    // Keep the payer valid: fall back to the first roster member if the current
+    // payer isn't part of this trip.
+    final payerId = (_payerPersonId != null &&
+            rosterIds.contains(_payerPersonId))
+        ? _payerPersonId!
+        : rosterIds.first;
+
+    final sharers = computeSharerIds(
+      rosterIds: rosterIds,
+      excludedIds: _excludedIds,
+      payerId: payerId,
+    );
+    final amount = _evaluate();
+    final perHead = perHeadShare(amount, sharers.length);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Payer picker (single-select).
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Text(l10n.txFormPayer,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: t.textSecondary.withValues(alpha: 0.8))),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Wrap(
             spacing: 6,
             runSpacing: 4,
-            children: persons.map((p) {
-              final selected = _splitParticipants.contains(p.id);
-              return FilterChip(
-                avatar: CircleAvatar(
-                  radius: 10,
-                  backgroundColor: AppColors.chipBg,
-                  child: Text(
-                    p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                        fontSize: 10, color: AppColors.textSecondary),
-                  ),
-                ),
-                label: Text(p.name,
-                    style: const TextStyle(fontSize: 11)),
-                selected: selected,
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _splitParticipants.add(p.id);
-                  } else {
-                    _splitParticipants.remove(p.id);
-                  }
+            children: roster.map((p) {
+              return ChoiceChip(
+                avatar: _initialAvatar(p.name),
+                label: Text(p.name, style: const TextStyle(fontSize: 11)),
+                selected: payerId == p.id,
+                onSelected: (_) => setState(() {
+                  _payerPersonId = p.id;
+                  // The payer always shares — never excluded (B).
+                  _excludedIds.remove(p.id);
                 }),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 visualDensity: VisualDensity.compact,
               );
             }).toList(),
           ),
-        );
-      },
+        ),
+        // Exclude multiselect. Selected = excluded from the split.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Text('不参与分摊',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: t.textSecondary.withValues(alpha: 0.8))),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: roster.map((p) {
+              final isPayer = p.id == payerId;
+              final excluded = _excludedIds.contains(p.id);
+              return FilterChip(
+                avatar: _initialAvatar(p.name),
+                label: Text(
+                  isPayer ? '${p.name}（付款）' : p.name,
+                  style: const TextStyle(fontSize: 11),
+                ),
+                selected: excluded,
+                // The payer can never be excluded (B) → chip disabled.
+                onSelected: isPayer
+                    ? null
+                    : (v) => setState(() {
+                          if (v) {
+                            _excludedIds.add(p.id);
+                          } else {
+                            _excludedIds.remove(p.id);
+                          }
+                        }),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(),
+          ),
+        ),
+        // Live per-head preview.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Text(
+            '每人 ${formatMoneyWithSymbol(perHead, _currency)} · ${sharers.length} 人分摊',
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: t.accentColor),
+          ),
+        ),
+      ],
     );
   }
+
+  Widget _initialAvatar(String name) => CircleAvatar(
+        radius: 10,
+        backgroundColor: _t.mutedColor,
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: TextStyle(fontSize: 10, color: _t.textSecondary),
+        ),
+      );
 
   // ── Numpad ──────────────────────────────────────────────────────────────────
 
   Widget _buildNumpad(BuildContext context, AppLocalizations l10n) {
+    final t = _t;
     final todayLabel = l10n.expenseFormToday;
-    final doneLabel = l10n.expenseFormDone;
+    // With a pending expression the CTA collapses it; otherwise it saves.
+    final pending = _hasPendingOp;
+    final doneLabel = pending ? '=' : l10n.expenseFormDone;
+    // Legible text on the accent CTA regardless of theme (gold on 星夜 needs
+    // dark text; terracotta on 暖陶 needs light text).
+    final ctaText =
+        ThemeData.estimateBrightnessForColor(t.accentColor) == Brightness.dark
+            ? Colors.white
+            : Colors.black87;
     final keys = [
       ['7', '8', '9', todayLabel],
       ['4', '5', '6', '+'],
@@ -692,12 +801,15 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
           children: row.map((key) {
             final isDone = key == doneLabel;
             final isToday = key == todayLabel;
-            final isAction =
-                isToday || key == '⌫' || key == '+' || key == '-';
+            final isAction = isToday || key == '⌫' || key == '+' || key == '-';
             return Expanded(
               child: GestureDetector(
                 onTap: isDone
-                    ? (_saving ? null : _save)
+                    ? (_saving
+                        ? null
+                        : pending
+                            ? () => setState(_collapseExpression)
+                            : _save)
                     : isToday
                         ? _pickDate
                         : () => _numpadPress(key),
@@ -706,28 +818,28 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen>
                   margin: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
                     color: isDone
-                        ? AppColors.primary    // coral orange CTA
+                        ? t.accentColor
                         : isAction
-                            ? AppColors.keyboardActionKey  // sandy action keys
-                            : AppColors.surface,           // cream-white number keys
+                            ? t.mutedColor
+                            : t.surfaceColor,
+                    border: isDone
+                        ? null
+                        : Border.all(color: t.borderColor, width: 0.5),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Center(
                     child: _saving && isDone
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white))
+                                strokeWidth: 2, color: ctaText))
                         : Text(
                             key,
                             style: TextStyle(
                               fontSize: isDone ? 16 : 18,
                               fontWeight: FontWeight.w600,
-                              color: isDone
-                                  ? Colors.white
-                                  : AppColors.textPrimary,
+                              color: isDone ? ctaText : t.textPrimary,
                             ),
                           ),
                   ),

@@ -68,7 +68,6 @@ class MemoryNotifier extends AsyncNotifier<void> {
     String? coverMediaPath,
     required DateTime startDate,
     DateTime? endDate,
-    double? budget,
     List<String> locationNames = const [],
     List<String> participantIds = const [],
   }) async {
@@ -86,7 +85,8 @@ class MemoryNotifier extends AsyncNotifier<void> {
       startDate: Value(startDate),
       endDate: Value(endDate),
       locationName: Value(locationName),
-      budget: Value(budget),
+      // budget intentionally untouched — the legacy column is dormant;
+      // per-currency budgets live in MemoryBudgets now.
       createdAt: existingId == null ? Value(now) : const Value.absent(),
       updatedAt: Value(now),
     ));

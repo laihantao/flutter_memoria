@@ -11,6 +11,7 @@ part 'expense_dao.g.dart';
   TransactionSplits,
   TransactionTags,
   Tags,
+  MemoryBudgets,
 ])
 class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
   ExpenseDao(super.db);
@@ -36,7 +37,10 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
   Stream<List<Category>> watchCategories({String? type}) {
     final query = select(categories);
     if (type != null) query.where((t) => t.type.equals(type));
-    query.orderBy([(t) => OrderingTerm.asc(t.name)]);
+    query.orderBy([
+      (t) => OrderingTerm.asc(t.sortOrder),
+      (t) => OrderingTerm.asc(t.name),
+    ]);
     return query.watch();
   }
 
@@ -48,6 +52,46 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
 
   Future<void> upsertCategory(CategoriesCompanion companion) =>
       into(categories).insertOnConflictUpdate(companion);
+
+  Future<void> deleteCategory(String id) =>
+      (delete(categories)..where((t) => t.id.equals(id))).go();
+
+  /// How many transactions reference [categoryId]. Guards deletion: a category
+  /// with history must not be removed (rows would render as raw ids).
+  Future<int> countTransactionsByCategory(String categoryId) async {
+    final countExp = transactions.id.count();
+    final query = selectOnly(transactions)
+      ..addColumns([countExp])
+      ..where(transactions.categoryId.equals(categoryId));
+    final row = await query.getSingle();
+    return row.read(countExp) ?? 0;
+  }
+
+  /// Persists a full reorder of one type's categories in a single batch.
+  Future<void> reorderCategories(List<String> orderedIds) =>
+      batch((b) {
+        for (var i = 0; i < orderedIds.length; i++) {
+          b.update(
+            categories,
+            CategoriesCompanion(sortOrder: Value(i)),
+            where: (t) => t.id.equals(orderedIds[i]),
+          );
+        }
+      });
+
+  // ── Memory budgets ────────────────────────────────────────────────────────────
+
+  Stream<List<MemoryBudget>> watchBudgets(String memoryId) =>
+      (select(memoryBudgets)
+            ..where((t) => t.memoryId.equals(memoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.currencyCode)]))
+          .watch();
+
+  Future<void> upsertBudget(MemoryBudgetsCompanion companion) =>
+      into(memoryBudgets).insertOnConflictUpdate(companion);
+
+  Future<void> deleteBudget(String id) =>
+      (delete(memoryBudgets)..where((t) => t.id.equals(id))).go();
 
   // ── Transactions ──────────────────────────────────────────────────────────────
 

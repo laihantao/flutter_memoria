@@ -12,12 +12,10 @@ import '../screens/partner/partner_dashboard_screen.dart';
 import '../screens/memory/memories_list_screen.dart';
 import '../screens/memory/memory_detail_screen.dart';
 import '../screens/memory/memory_form_screen.dart';
-import '../screens/expense/expenses_screen.dart';
 import '../screens/expense/expense_form_screen.dart';
-import '../screens/expense/wallets_screen.dart';
-import '../screens/expense/transactions_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/settings/time_categories_screen.dart';
+import '../screens/settings/expense_categories_screen.dart';
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/loading',
@@ -96,23 +94,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (_, state) => ExpenseFormScreen(
                         memoryId: state.pathParameters['id']),
                   ),
+                  // Edit an expense belonging to this memory
+                  GoRoute(
+                    path: 'expenses/:txId/edit',
+                    builder: (_, state) => ExpenseFormScreen(
+                        transactionId: state.pathParameters['txId']),
+                  ),
                 ],
-              ),
-            ],
-          ),
-          // Expenses (new bottom-nav tab)
-          GoRoute(
-            path: '/expenses',
-            builder: (_, _) => const ExpensesScreen(),
-            routes: [
-              GoRoute(
-                path: 'new',
-                builder: (_, _) => const ExpenseFormScreen(),
-              ),
-              GoRoute(
-                path: ':id/edit',
-                builder: (_, state) => ExpenseFormScreen(
-                    transactionId: state.pathParameters['id']),
               ),
             ],
           ),
@@ -125,30 +113,9 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'categories',
                 builder: (_, _) => const TimeCategoriesScreen(),
               ),
-              // Wallets moved here from bottom nav
               GoRoute(
-                path: 'wallets',
-                builder: (_, _) => const WalletsScreen(),
-                routes: [
-                  GoRoute(
-                    path: ':walletId/transactions',
-                    builder: (_, state) => TransactionsScreen(
-                        walletId: state.pathParameters['walletId']!),
-                    routes: [
-                      GoRoute(
-                        path: 'new',
-                        builder: (_, state) => ExpenseFormScreen(
-                            walletId: state.pathParameters['walletId']),
-                      ),
-                      GoRoute(
-                        path: ':txId/edit',
-                        builder: (_, state) => ExpenseFormScreen(
-                          transactionId: state.pathParameters['txId'],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                path: 'expense-categories',
+                builder: (_, _) => const ExpenseCategoriesScreen(),
               ),
             ],
           ),
