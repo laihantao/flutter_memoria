@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../data/app_database.dart';
 import '../utils/file_ops.dart';
 import 'database_provider.dart';
+import 'memory_provider.dart';
 
 const _uuid = Uuid();
 
@@ -19,6 +20,16 @@ final selfPersonStreamProvider = FutureProvider<Person?>((ref) {
   return ref.watch(databaseProvider).personDao.getSelfPerson();
 });
 
+/// Live "Me" identity — the onboarding-created person with isSelf == true.
+/// Single source of truth for the current user across the expense-split feature
+/// (default payer, never-excludable payer, "Me" in the settlement matrices).
+///
+/// NOTE: Memora has no separate "userprofile" module; the current user *is*
+/// this Persons row (created in onboarding via savePerson(isSelf: true)).
+final mePersonProvider = StreamProvider<Person?>((ref) {
+  return ref.watch(databaseProvider).personDao.watchSelfPerson();
+});
+
 final personsProvider = StreamProvider<List<Person>>((ref) {
   return ref.watch(databaseProvider).personDao.watchAllPersons();
 });
@@ -26,6 +37,34 @@ final personsProvider = StreamProvider<List<Person>>((ref) {
 final personProvider =
     StreamProvider.family<Person?, String>((ref, id) {
   return ref.watch(databaseProvider).personDao.watchPerson(id);
+});
+
+/// The persons who make up a trip's roster for the expense-split pickers:
+/// the memory's [MemoryParticipants] resolved to [Person]s, with "Me" always
+/// unioned in (safety net for trips created before self-auto-add, and because
+/// [personsProvider] excludes the self row). "Me" is ordered first.
+///
+/// Returns a plain list (loading is handled by the underlying providers); an
+/// empty list simply means the roster hasn't resolved yet.
+final memoryParticipantPersonsProvider =
+    Provider.family<List<Person>, String>((ref, memoryId) {
+  final participants =
+      ref.watch(memoryParticipantsProvider(memoryId)).value ?? const [];
+  final others = ref.watch(personsProvider).value ?? const []; // excludes self
+  final me = ref.watch(mePersonProvider).value;
+
+  final byId = {for (final p in others) p.id: p};
+  if (me != null) byId[me.id] = me;
+
+  final ids = <String>{
+    if (me != null) me.id,
+    ...participants.map((p) => p.personId),
+  };
+
+  return [
+    for (final id in ids)
+      if (byId[id] != null) byId[id]!,
+  ];
 });
 
 final phonesProvider =

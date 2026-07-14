@@ -26,6 +26,13 @@ class PersonDao extends DatabaseAccessor<AppDatabase> with _$PersonDaoMixin {
       (select(persons)..where((t) => t.isSelf.equals(true)))
           .getSingleOrNull();
 
+  /// Live "Me" — the single onboarding-created [Persons] row with isSelf == true.
+  /// This is the app's current-user identity used as default payer, the
+  /// never-excludable payer, and the "Me" row/column in split statements.
+  Stream<Person?> watchSelfPerson() =>
+      (select(persons)..where((t) => t.isSelf.equals(true)))
+          .watchSingleOrNull();
+
   Stream<List<Person>> watchAllPersons() =>
       (select(persons)..where((t) => t.isSelf.equals(false))
         ..orderBy([(t) => OrderingTerm.asc(t.name)]))
