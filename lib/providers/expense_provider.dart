@@ -5,8 +5,11 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../data/app_database.dart';
+import '../services/expense_split_service.dart';
 import '../utils/file_ops.dart';
+import '../utils/money.dart';
 import 'database_provider.dart';
+import 'person_provider.dart';
 
 const _uuid = Uuid();
 
@@ -33,6 +36,53 @@ final transactionSplitsProvider =
 final memoryBudgetsProvider =
     StreamProvider.family<List<MemoryBudget>, String>((ref, memoryId) {
   return ref.watch(databaseProvider).expenseDao.watchBudgets(memoryId);
+});
+
+/// Per-currency settlement (Payment Statement + Final Consolidate) for a memory.
+///
+/// Composes the memory's `split_aa` expenses, their persisted splits, and the
+/// trip roster, then runs the pure [ExpenseSplitService]. Feeds the (Phase 3)
+/// PDF preview and any in-app settlement view. One-shot: recomputes on read,
+/// which is what the export flow needs.
+final memorySplitResultsProvider =
+    FutureProvider.family<List<CurrencySplit>, String>((ref, memoryId) async {
+  final db = ref.watch(databaseProvider);
+  final txns = await db.expenseDao.getTransactionsByMemoryId(memoryId);
+
+  // Only AA expenses with a payer contribute to settlement.
+  final aa = txns
+      .where((t) =>
+          t.type == 'expense' &&
+          t.splitType == 'split_aa' &&
+          t.payerPersonId != null)
+      .toList();
+
+  final splits =
+      await db.expenseDao.getSplitsForTransactions(aa.map((t) => t.id).toList());
+  final splitsByTx = <String, List<TransactionSplit>>{};
+  for (final s in splits) {
+    (splitsByTx[s.transactionId] ??= <TransactionSplit>[]).add(s);
+  }
+
+  final rosterIds = ref
+      .watch(memoryParticipantPersonsProvider(memoryId))
+      .map((p) => p.id)
+      .toList();
+
+  final inputs = <SplitTxn>[
+    for (final t in aa)
+      if ((splitsByTx[t.id] ?? const []).isNotEmpty)
+        SplitTxn(
+          currencyCode: normalizeCurrency(t.currencyCode),
+          payerPersonId: t.payerPersonId!,
+          shares: {
+            for (final s in splitsByTx[t.id]!) s.personId: s.shareAmount,
+          },
+        ),
+  ];
+
+  return const ExpenseSplitService()
+      .compute(transactions: inputs, participantIds: rosterIds);
 });
 
 // ── Notifier ──────────────────────────────────────────────────────────────────

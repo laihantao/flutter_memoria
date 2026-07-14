@@ -23,13 +23,13 @@ import '../../providers/expense_provider.dart';
 import '../../providers/memory_provider.dart';
 import '../../providers/person_provider.dart';
 import '../../services/pdf_service.dart';
-import '../../services/settle_up_service.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/file_ops.dart';
 import '../../widgets/person_avatar.dart';
 import '../../widgets/theme_background.dart';
 import '../../widgets/theme_picker_grid.dart';
+import 'expense_export_screen.dart';
 import 'memory_expenses_tab.dart';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -175,58 +175,33 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
     );
     if (choice == null || !mounted) return;
 
+    // 分账 / expenses: dedicated preview screen with per-section toggles and a
+    // per-currency Payment Statement + Final Consolidate (Req G).
+    if (choice == 'settlement') {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ExpenseExportScreen(memory: memory),
+      ));
+      return;
+    }
+
+    // Keepsake: cover + itinerary + photo grid, shared directly.
     try {
       final itinerary = await ref.read(itineraryProvider(widget.id).future);
       final mediaAssets =
           await ref.read(mediaAssetsProvider(widget.id).future);
 
-      Uint8List pdfBytes;
-      String fileName;
-
-      if (choice == 'keepsake') {
-        pdfBytes = await PdfService.generateKeepsake(
-          memory: memory,
-          itinerary: itinerary,
-          mediaAssets: mediaAssets,
-          participantNames: const [],
-        );
-        fileName = 'memora_keepsake_${memory.id}.pdf';
-      } else {
-        final transactions = await ref
-            .read(databaseProvider)
-            .expenseDao
-            .getTransactionsForMemory(widget.id);
-
-        final splitMap = <String, List<TransactionSplit>>{};
-        for (final tx in transactions) {
-          splitMap[tx.id] =
-              await ref.read(databaseProvider).expenseDao.getSplits(tx.id);
-        }
-
-        final settlements = SettleUpService().compute(
-          transactions: transactions,
-          splitsByTxId: splitMap,
-          baseCurrency: 'MYR',
-        );
-
-        final categories =
-            await ref.read(databaseProvider).expenseDao.getCategories();
-        final categoryNames = {for (final c in categories) c.id: c.name};
-
-        pdfBytes = await PdfService.generateSettlement(
-          memory: memory,
-          transactions: transactions,
-          personNames: const {},
-          categoryNames: categoryNames,
-          settlements: settlements,
-        );
-        fileName = 'memora_settlement_${memory.id}.pdf';
-      }
+      final pdfBytes = await PdfService.generateKeepsake(
+        memory: memory,
+        itinerary: itinerary,
+        mediaAssets: mediaAssets,
+        participantNames: const [],
+      );
 
       if (!mounted) return;
       await Share.shareXFiles([
         XFile.fromData(pdfBytes,
-            name: fileName, mimeType: 'application/pdf'),
+            name: 'memora_keepsake_${memory.id}.pdf',
+            mimeType: 'application/pdf'),
       ]);
     } catch (e) {
       if (mounted) {

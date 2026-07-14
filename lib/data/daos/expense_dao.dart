@@ -180,6 +180,15 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
             ..where((t) => t.transactionId.equals(transactionId)))
           .get();
 
+  /// All splits for a set of transactions in one query (settlement math).
+  Future<List<TransactionSplit>> getSplitsForTransactions(
+      List<String> transactionIds) {
+    if (transactionIds.isEmpty) return Future.value(const []);
+    return (select(transactionSplits)
+          ..where((t) => t.transactionId.isIn(transactionIds)))
+        .get();
+  }
+
   Future<void> upsertSplit(TransactionSplitsCompanion companion) =>
       into(transactionSplits).insertOnConflictUpdate(companion);
 
