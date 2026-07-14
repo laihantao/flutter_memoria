@@ -32,6 +32,8 @@ String newId() => _uuid.v4();
     MemoryLocations,
     MemoryBudgets,
     ItineraryItems,
+    ItineraryDays,
+    ItineraryStops,
     MediaAssets,
     Wallets,
     Categories,
@@ -48,7 +50,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -117,7 +119,7 @@ class AppDatabase extends _$AppDatabase {
                 );
               }
             }
-            if (v == 9) {
+            if (v == 11) {
               // Data-only cleanup after the standalone expenses module was
               // removed. No schema change — the Wallets/TransactionTags tables
               // and Transactions.walletId column stay in place, dormant.
@@ -149,8 +151,16 @@ class AppDatabase extends _$AppDatabase {
                       walletId: Value<String?>(null)));
               await delete(wallets).go();
             }
-            if (v == 10) {
+            if (v == 12) {
               // Per-currency budgets + user-sortable categories.
+              // Idempotent: dev builds briefly shipped this work under their
+              // own schema v10 (before the itinerary branch was merged), so
+              // skip when the table already exists.
+              final already = (await customSelect(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='memory_budgets'",
+              ).get())
+                  .isNotEmpty;
+              if (already) continue;
               await m.createTable(memoryBudgets);
               await m.addColumn(categories, categories.sortOrder);
 
@@ -166,29 +176,32 @@ class AppDatabase extends _$AppDatabase {
               }
 
               // Migrate the legacy single-number Memories.budget into one
-              // MemoryBudgets row. Currency: the memory's dominant transaction
-              // currency, falling back to MYR. The old column stays dormant.
+              // MemoryBudgets row. Currency: the explicit budgetCurrency
+              // (added in v9) when set, else the memory's dominant transaction
+              // currency, falling back to MYR. The old columns stay dormant.
               final budgeted = await (select(memories)
                     ..where((t) => t.budget.isNotNull()))
                   .get();
               for (final mem in budgeted) {
                 if (mem.budget == null || mem.budget! <= 0) continue;
-                final txs = await (select(transactions)
-                      ..where((t) => t.memoryId.equals(mem.id)))
-                    .get();
-                final counts = <String, int>{};
-                for (final tx in txs) {
-                  counts[tx.currencyCode] =
-                      (counts[tx.currencyCode] ?? 0) + 1;
-                }
-                var currency = 'MYR';
-                var best = 0;
-                counts.forEach((code, n) {
-                  if (n > best) {
-                    best = n;
-                    currency = code;
+                var currency = mem.budgetCurrency ?? 'MYR';
+                if (mem.budgetCurrency == null) {
+                  final txs = await (select(transactions)
+                        ..where((t) => t.memoryId.equals(mem.id)))
+                      .get();
+                  final counts = <String, int>{};
+                  for (final tx in txs) {
+                    counts[tx.currencyCode] =
+                        (counts[tx.currencyCode] ?? 0) + 1;
                   }
-                });
+                  var best = 0;
+                  counts.forEach((code, n) {
+                    if (n > best) {
+                      best = n;
+                      currency = code;
+                    }
+                  });
+                }
                 await into(memoryBudgets).insert(
                   MemoryBudgetsCompanion.insert(
                     id: newId(),
@@ -197,6 +210,52 @@ class AppDatabase extends _$AppDatabase {
                     amount: mem.budget!,
                   ),
                 );
+              }
+            }
+            if (v == 9) {
+              await m.addColumn(memories, memories.budgetCurrency);
+            }
+            if (v == 10) {
+              await m.createTable(itineraryDays);
+              await m.createTable(itineraryStops);
+              // Migrate existing ItineraryItems → ItineraryDays + ItineraryStops
+              final allMems = await select(memories).get();
+              for (final mem in allMems) {
+                final items = await (select(itineraryItems)
+                      ..where((t) => t.memoryId.equals(mem.id))
+                      ..orderBy([
+                        (t) => OrderingTerm.asc(t.itemDate),
+                        (t) => OrderingTerm.asc(t.sortOrder),
+                      ]))
+                    .get();
+                if (items.isEmpty) continue;
+                final byDate = <String, List<ItineraryItem>>{};
+                for (final item in items) {
+                  final k =
+                      '${item.itemDate.year}-${item.itemDate.month.toString().padLeft(2, '0')}-${item.itemDate.day.toString().padLeft(2, '0')}';
+                  byDate.putIfAbsent(k, () => []).add(item);
+                }
+                final sortedDates = byDate.keys.toList()..sort();
+                for (var i = 0; i < sortedDates.length; i++) {
+                  final dayItems = byDate[sortedDates[i]]!;
+                  final dayId = newId();
+                  await into(itineraryDays).insert(ItineraryDaysCompanion(
+                    id: Value(dayId),
+                    memoryId: Value(mem.id),
+                    dayNumber: Value(i + 1),
+                    date: Value(dayItems.first.itemDate),
+                  ));
+                  for (var j = 0; j < dayItems.length; j++) {
+                    final item = dayItems[j];
+                    await into(itineraryStops).insert(ItineraryStopsCompanion(
+                      id: Value(newId()),
+                      dayId: Value(dayId),
+                      orderIndex: Value(j),
+                      activityText: Value(item.title),
+                      timeLabel: Value(item.itemTime),
+                    ));
+                  }
+                }
               }
             }
             if (v == 4) {

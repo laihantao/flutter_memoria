@@ -25,6 +25,15 @@ class ThemeConfig {
   final double densityBaseMultiplier;
   final double speedBaseMultiplier;
 
+  /// Color for ThemeDecorationLayer's decorative elements
+  /// (snowflakes, stars, flames follow the theme accent).
+  Color get decorationColor => accentColor;
+
+  /// Page-level background gradient for this theme's brightness, if any.
+  LinearGradient? get pageBackgroundGradient =>
+      (brightness == Brightness.dark ? darkPageBackground : lightPageBackground)
+          as LinearGradient?;
+
   const ThemeConfig({
     required this.id,
     required this.name,

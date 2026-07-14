@@ -9,6 +9,8 @@ part 'memory_dao.g.dart';
   MemoryParticipants,
   MemoryLocations,
   ItineraryItems,
+  ItineraryDays,
+  ItineraryStops,
   MediaAssets,
   Tags,
   TimeCategories,
@@ -112,6 +114,77 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
 
   Future<void> clearItineraryItems(String memoryId) =>
       (delete(itineraryItems)..where((t) => t.memoryId.equals(memoryId))).go();
+
+  // ── Itinerary Days ────────────────────────────────────────────────────────────
+
+  Stream<List<ItineraryDay>> watchItineraryDays(String memoryId) =>
+      (select(itineraryDays)
+            ..where((t) => t.memoryId.equals(memoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.dayNumber)]))
+          .watch();
+
+  Future<List<ItineraryDay>> getItineraryDays(String memoryId) =>
+      (select(itineraryDays)
+            ..where((t) => t.memoryId.equals(memoryId))
+            ..orderBy([(t) => OrderingTerm.asc(t.dayNumber)]))
+          .get();
+
+  Future<void> upsertItineraryDay(ItineraryDaysCompanion companion) =>
+      into(itineraryDays).insertOnConflictUpdate(companion);
+
+  Future<void> deleteItineraryDay(String id) =>
+      (delete(itineraryDays)..where((t) => t.id.equals(id))).go();
+
+  Future<void> clearItineraryDays(String memoryId) =>
+      (delete(itineraryDays)..where((t) => t.memoryId.equals(memoryId))).go();
+
+  // ── Itinerary Stops ───────────────────────────────────────────────────────────
+
+  Stream<List<ItineraryStop>> watchItineraryStops(String dayId) =>
+      (select(itineraryStops)
+            ..where((t) => t.dayId.equals(dayId))
+            ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
+          .watch();
+
+  Stream<List<ItineraryStop>> watchAllItineraryStopsForMemory(String memoryId) =>
+      (select(itineraryStops).join([
+        innerJoin(
+            itineraryDays, itineraryDays.id.equalsExp(itineraryStops.dayId)),
+      ])
+            ..where(itineraryDays.memoryId.equals(memoryId))
+            ..orderBy([
+              OrderingTerm.asc(itineraryDays.dayNumber),
+              OrderingTerm.asc(itineraryStops.orderIndex),
+            ]))
+          .watch()
+          .map((rows) =>
+              rows.map((r) => r.readTable(itineraryStops)).toList());
+
+  Future<List<ItineraryStop>> getItineraryStops(String dayId) =>
+      (select(itineraryStops)
+            ..where((t) => t.dayId.equals(dayId))
+            ..orderBy([(t) => OrderingTerm.asc(t.orderIndex)]))
+          .get();
+
+  Future<void> upsertItineraryStop(ItineraryStopsCompanion companion) =>
+      into(itineraryStops).insertOnConflictUpdate(companion);
+
+  Future<void> deleteItineraryStop(String id) =>
+      (delete(itineraryStops)..where((t) => t.id.equals(id))).go();
+
+  Future<void> clearItineraryStops(String dayId) =>
+      (delete(itineraryStops)..where((t) => t.dayId.equals(dayId))).go();
+
+  Future<void> clearAllItineraryStopsForMemory(String memoryId) async {
+    final days = await getItineraryDays(memoryId);
+    for (final day in days) {
+      await clearItineraryStops(day.id);
+    }
+  }
+
+  Future<void> updateItineraryStopOrder(String stopId, int newOrder) =>
+      (update(itineraryStops)..where((t) => t.id.equals(stopId)))
+          .write(ItineraryStopsCompanion(orderIndex: Value(newOrder)));
 
   // ── Media Assets ──────────────────────────────────────────────────────────────
 
