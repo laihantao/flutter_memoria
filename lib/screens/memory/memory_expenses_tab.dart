@@ -1,19 +1,32 @@
 import 'dart:math' show pi, min, cos, sin;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../data/app_database.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/currency_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/person_provider.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/money.dart';
 
-/// Currencies offered in the budget editor (matches the expense form).
-const _kBudgetCurrencies = ['MYR', 'SGD', 'USD', 'EUR', 'CNY'];
+/// Rejects any edit that isn't a valid money amount: digits, at most one
+/// decimal point, at most two decimal places. Guards keyboards (web/desktop)
+/// that would otherwise let letters through a numeric TextField.
+class MoneyInputFormatter extends TextInputFormatter {
+  static final _re = RegExp(r'^\d*\.?\d{0,2}$');
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.text.isEmpty) return newValue;
+    return _re.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
 
 /// Theme-agnostic pastel palette for the category donut.
 const _kChartColors = [
@@ -870,12 +883,17 @@ class _BudgetSheet extends ConsumerStatefulWidget {
 }
 
 class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
-  final Map<String, TextEditingController> _ctrls = {
-    for (final c in _kBudgetCurrencies) c: TextEditingController(),
-  };
+  // Controllers are created lazily per displayed currency.
+  final Map<String, TextEditingController> _ctrls = {};
   Map<String, MemoryBudget> _existing = {};
+  // Currencies shown this build — iterated on save so a cleared field deletes
+  // its budget. Kept in sync in build().
+  List<String> _currencies = const [];
   bool _initialized = false;
   bool _saving = false;
+
+  TextEditingController _ctrlFor(String code) =>
+      _ctrls.putIfAbsent(code, () => TextEditingController());
 
   @override
   void dispose() {
@@ -892,8 +910,8 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
     setState(() => _saving = true);
     try {
       final notifier = ref.read(expenseNotifierProvider.notifier);
-      for (final code in _kBudgetCurrencies) {
-        final text = _ctrls[code]!.text.trim();
+      for (final code in _currencies) {
+        final text = _ctrlFor(code).text.trim();
         final amount = double.tryParse(text);
         final existing = _existing[code];
         if (amount != null && amount > 0) {
@@ -916,14 +934,28 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final enabled = ref.watch(enabledCurrenciesProvider);
     final budgetsAsync = ref.watch(memoryBudgetsProvider(widget.memoryId));
+    final budgets = budgetsAsync.value ?? const <MemoryBudget>[];
+
+    // Show the enabled currencies, plus any currency that already has a budget
+    // (so a budget in a since-disabled currency stays visible and editable).
+    final present = <String>{
+      ...enabled,
+      for (final b in budgets) b.currencyCode,
+    };
+    _currencies = [
+      ...kCurrencyCatalog.where(present.contains),
+      // Defensive: a stored code outside the known catalog.
+      for (final b in budgets)
+        if (!kCurrencyCatalog.contains(b.currencyCode)) b.currencyCode,
+    ];
 
     // Prefill once from the stream's first data.
-    final budgets = budgetsAsync.value;
-    if (!_initialized && budgets != null) {
+    if (!_initialized && budgetsAsync.hasValue) {
       _existing = {for (final b in budgets) b.currencyCode: b};
       for (final b in budgets) {
-        _ctrls[b.currencyCode]?.text = _fmt(b.amount);
+        _ctrlFor(b.currencyCode).text = _fmt(b.amount);
       }
       _initialized = true;
     }
@@ -945,14 +977,16 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
                 style: GoogleFonts.notoSansSc(
                     fontSize: 12, color: t.textSecondary)),
             const SizedBox(height: 12),
-            for (final code in _kBudgetCurrencies)
+            for (final code in _currencies)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
+                    // Fixed-width symbol so every amount field starts at the
+                    // same x regardless of symbol length (RM / S$ / ¥ ...).
                     SizedBox(
-                      width: 52,
-                      child: Text(code,
+                      width: 48,
+                      child: Text(currencySymbol(code),
                           style: GoogleFonts.plusJakartaSans(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -960,13 +994,15 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
                     ),
                     Expanded(
                       child: TextField(
-                        controller: _ctrls[code],
+                        controller: _ctrlFor(code),
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
+                        inputFormatters: [MoneyInputFormatter()],
+                        // Right-align so the numbers line up down the column.
+                        textAlign: TextAlign.right,
                         decoration: InputDecoration(
                           isDense: true,
                           hintText: '0.00',
-                          prefixText: '${currencySymbol(code)} ',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/app_database.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/currency_provider.dart';
 import '../../providers/database_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/memory_provider.dart';
@@ -11,8 +12,6 @@ import '../../providers/person_provider.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/money.dart';
 import '../../utils/split_math.dart';
-
-const _kCurrencies = ['MYR', 'SGD', 'USD', 'EUR', 'CNY'];
 
 const _kSplitTypes = ['personal', 'split_aa', 'treat'];
 
@@ -62,6 +61,10 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
   void initState() {
     super.initState();
     _memoryId = widget.memoryId;
+    // New expenses default to the first enabled currency; editing overrides
+    // this from the saved transaction in _loadExisting.
+    final enabled = ref.read(enabledCurrenciesProvider);
+    if (enabled.isNotEmpty) _currency = enabled.first;
     _initSelf();
   }
 
@@ -289,6 +292,13 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
     final categoriesAsync = ref.watch(categoriesProvider(_type));
     final memoriesAsync = ref.watch(memoriesProvider);
     final symbol = currencySymbol(_currency);
+    // Currency picker = the user's enabled set, plus the current value so
+    // editing a transaction in a since-disabled currency still shows it.
+    final enabledCurrencies = ref.watch(enabledCurrenciesProvider);
+    final pickerCurrencies = [
+      ...enabledCurrencies,
+      if (!enabledCurrencies.contains(_currency)) _currency,
+    ];
 
     // Reconstruct the exclude set for an edited AA expense once the roster
     // resolves (D1). Safe to run in build: it only fires while the pending flag
@@ -333,7 +343,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
           PopupMenuButton<String>(
             initialValue: _currency,
             onSelected: (c) => setState(() => _currency = c),
-            itemBuilder: (_) => _kCurrencies
+            itemBuilder: (_) => pickerCurrencies
                 .map((c) => PopupMenuItem(value: c, child: Text(c)))
                 .toList(),
             child: Padding(
@@ -778,7 +788,9 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
 
   Widget _buildNumpad(BuildContext context, AppLocalizations l10n) {
     final t = _t;
-    final todayLabel = l10n.expenseFormToday;
+    // Date key reflects the chosen date ("今天" only when it really is today),
+    // so picking another day is visible on the keypad, not just the app bar.
+    final dateLabel = _formatDate(_date, l10n);
     // With a pending expression the CTA collapses it; otherwise it saves.
     final pending = _hasPendingOp;
     final doneLabel = pending ? '=' : l10n.expenseFormDone;
@@ -789,7 +801,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
             ? Colors.white
             : Colors.black87;
     final keys = [
-      ['7', '8', '9', todayLabel],
+      ['7', '8', '9', dateLabel],
       ['4', '5', '6', '+'],
       ['1', '2', '3', '-'],
       ['.', '0', '⌫', doneLabel],
@@ -800,8 +812,8 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
         return Row(
           children: row.map((key) {
             final isDone = key == doneLabel;
-            final isToday = key == todayLabel;
-            final isAction = isToday || key == '⌫' || key == '+' || key == '-';
+            final isDate = key == dateLabel;
+            final isAction = isDate || key == '⌫' || key == '+' || key == '-';
             return Expanded(
               child: GestureDetector(
                 onTap: isDone
@@ -810,7 +822,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                         : pending
                             ? () => setState(_collapseExpression)
                             : _save)
-                    : isToday
+                    : isDate
                         ? _pickDate
                         : () => _numpadPress(key),
                 child: Container(
@@ -836,8 +848,11 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                                 strokeWidth: 2, color: ctaText))
                         : Text(
                             key,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: isDone ? 16 : 18,
+                              // Date labels are multi-char — shrink to fit.
+                              fontSize: isDate ? 14 : (isDone ? 16 : 18),
                               fontWeight: FontWeight.w600,
                               color: isDone ? ctaText : t.textPrimary,
                             ),

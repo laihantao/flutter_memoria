@@ -88,6 +88,14 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/settings/expense-categories'),
           ),
+          ListTile(
+            leading: Icon(Icons.paid_outlined,
+                color: Theme.of(context).extension<AppThemeExtension>()!.textSecondary),
+            title: const Text('货币'),
+            subtitle: const Text('记账与预算可用的货币'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/settings/currencies'),
+          ),
           const Divider(),
           _SectionHeader(l10n.settingsSectionBackup),
           ListTile(

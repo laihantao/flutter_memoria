@@ -16,6 +16,7 @@ import '../screens/expense/expense_form_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/settings/time_categories_screen.dart';
 import '../screens/settings/expense_categories_screen.dart';
+import '../screens/settings/currency_settings_screen.dart';
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/loading',
@@ -116,6 +117,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'expense-categories',
                 builder: (_, _) => const ExpenseCategoriesScreen(),
+              ),
+              GoRoute(
+                path: 'currencies',
+                builder: (_, _) => const CurrencySettingsScreen(),
               ),
             ],
           ),
