@@ -209,24 +209,6 @@ class MemoryDao extends DatabaseAccessor<AppDatabase> with _$MemoryDaoMixin {
   Future<void> clearMediaAssets(String memoryId) =>
       (delete(mediaAssets)..where((t) => t.memoryId.equals(memoryId))).go();
 
-  // ── Tags ──────────────────────────────────────────────────────────────────────
-
-  Stream<List<Tag>> watchAllTags() =>
-      (select(tags)..orderBy([(t) => OrderingTerm.asc(t.label)])).watch();
-
-  Future<void> upsertTag(TagsCompanion companion) =>
-      into(tags).insertOnConflictUpdate(companion);
-
-  Future<void> linkTagToMemory(String tagId, String memoryId) =>
-      (update(tags)..where((t) => t.id.equals(tagId)))
-          .write(TagsCompanion(memoryId: Value(memoryId)));
-
-  Future<List<Tag>> getTagsByMemoryId(String memoryId) =>
-      (select(tags)..where((t) => t.memoryId.equals(memoryId))).get();
-
-  Future<void> clearTagsForMemory(String memoryId) =>
-      (delete(tags)..where((t) => t.memoryId.equals(memoryId))).go();
-
   // ── Time Categories ───────────────────────────────────────────────────────────
 
   Stream<List<TimeCategory>> watchAllTimeCategories() =>

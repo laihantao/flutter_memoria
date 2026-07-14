@@ -151,23 +151,6 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
   Future<void> clearTransactionsByMemoryId(String memoryId) =>
       (delete(transactions)..where((t) => t.memoryId.equals(memoryId))).go();
 
-  // Get transactions linked to a memory (via tags)
-  Future<List<Transaction>> getTransactionsForMemory(String memoryId) async {
-    final tagRows = await (select(tags)
-          ..where((t) => t.memoryId.equals(memoryId)))
-        .get();
-    if (tagRows.isEmpty) return [];
-
-    final tagIds = tagRows.map((t) => t.id).toList();
-    final txTagRows = await (select(transactionTags)
-          ..where((t) => t.tagId.isIn(tagIds)))
-        .get();
-    if (txTagRows.isEmpty) return [];
-
-    final txIds = txTagRows.map((t) => t.transactionId).toSet().toList();
-    return (select(transactions)..where((t) => t.id.isIn(txIds))).get();
-  }
-
   // ── Splits ────────────────────────────────────────────────────────────────────
 
   Stream<List<TransactionSplit>> watchSplits(String transactionId) =>
@@ -204,49 +187,4 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
         .go();
   }
 
-  // ── Transaction Tags ──────────────────────────────────────────────────────────
-
-  Future<List<TransactionTag>> getTransactionTags(String transactionId) =>
-      (select(transactionTags)
-            ..where((t) => t.transactionId.equals(transactionId)))
-          .get();
-
-  Future<void> addTransactionTag(TransactionTagsCompanion companion) =>
-      into(transactionTags).insertOnConflictUpdate(companion);
-
-  Future<void> removeTransactionTag(
-          String transactionId, String tagId) =>
-      (delete(transactionTags)
-            ..where((t) =>
-                t.transactionId.equals(transactionId) &
-                t.tagId.equals(tagId)))
-          .go();
-
-  Future<void> clearTransactionTagsByTransactionIds(
-      List<String> transactionIds) {
-    if (transactionIds.isEmpty) return Future.value();
-    return (delete(transactionTags)
-          ..where((t) => t.transactionId.isIn(transactionIds)))
-        .go();
-  }
-
-  Future<void> clearTransactionTagsByTagIds(List<String> tagIds) {
-    if (tagIds.isEmpty) return Future.value();
-    return (delete(transactionTags)
-          ..where((t) => t.tagId.isIn(tagIds)))
-        .go();
-  }
-
-  Future<void> bulkTagTransactions(
-      List<String> transactionIds, String tagId) async {
-    for (final txId in transactionIds) {
-      await into(transactionTags).insertOnConflictUpdate(
-        TransactionTagsCompanion(
-          id: Value('${txId}_$tagId'),
-          transactionId: Value(txId),
-          tagId: Value(tagId),
-        ),
-      );
-    }
-  }
 }

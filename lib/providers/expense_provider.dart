@@ -111,7 +111,6 @@ class ExpenseNotifier extends AsyncNotifier<void> {
     String? payerPersonId,
     List<({String personId, String shareType, double shareAmount})> splits =
         const [],
-    List<String> tagIds = const [],
   }) async {
     final id = existingId ?? _uuid.v4();
     final now = DateTime.now();
@@ -156,14 +155,6 @@ class ExpenseNotifier extends AsyncNotifier<void> {
         personId: Value(s.personId),
         shareType: Value(s.shareType),
         shareAmount: Value(s.shareAmount),
-      ));
-    }
-
-    for (final tagId in tagIds) {
-      await _db.expenseDao.addTransactionTag(TransactionTagsCompanion(
-        id: Value('${id}_$tagId'),
-        transactionId: Value(id),
-        tagId: Value(tagId),
       ));
     }
 

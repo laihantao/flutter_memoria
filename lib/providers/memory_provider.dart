@@ -62,10 +62,6 @@ final memoryLocationsProvider =
   return ref.watch(databaseProvider).memoryDao.watchLocations(memoryId);
 });
 
-final tagsProvider = StreamProvider<List<Tag>>((ref) {
-  return ref.watch(databaseProvider).memoryDao.watchAllTags();
-});
-
 final timeCategoriesProvider = StreamProvider<List<TimeCategory>>((ref) {
   return ref.watch(databaseProvider).memoryDao.watchAllTimeCategories();
 });
@@ -159,14 +155,7 @@ class MemoryNotifier extends AsyncNotifier<void> {
       final txns = await _db.expenseDao.getTransactionsByMemoryId(id);
       final txIds = txns.map((t) => t.id).toList();
       await _db.expenseDao.clearSplitsByTransactionIds(txIds);
-      await _db.expenseDao.clearTransactionTagsByTransactionIds(txIds);
       await _db.expenseDao.clearTransactionsByMemoryId(id);
-
-      // Tags belonging to this memory (and their transaction_tag links)
-      final memoryTags = await _db.memoryDao.getTagsByMemoryId(id);
-      final tagIds = memoryTags.map((t) => t.id).toList();
-      await _db.expenseDao.clearTransactionTagsByTagIds(tagIds);
-      await _db.memoryDao.clearTagsForMemory(id);
 
       // Itinerary, media asset records, participants, locations
       await _db.memoryDao.clearItineraryItems(id);
@@ -422,20 +411,6 @@ class MemoryNotifier extends AsyncNotifier<void> {
         memoryId: memoryId, dayNumber: nextNumber, date: date);
   }
 
-  Future<String> createOrGetTag(String label) async {
-    final db = _db;
-    final existing = await (db.select(db.tags)
-          ..where((t) => t.label.equals(label)))
-        .getSingleOrNull();
-    if (existing != null) return existing.id;
-
-    final id = _uuid.v4();
-    await db.memoryDao.upsertTag(TagsCompanion(
-      id: Value(id),
-      label: Value(label),
-    ));
-    return id;
-  }
 }
 
 final memoryNotifierProvider =
