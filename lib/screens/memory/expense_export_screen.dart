@@ -29,7 +29,8 @@ class ExpenseExportScreen extends ConsumerStatefulWidget {
 
 class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
   bool _expensesTable = true;
-  bool _personCosts = true;
+  bool _categoryChart = true;
+  bool _personSpend = true;
   bool _statement = false;
   bool _consolidate = true;
   // Off by default: this PDF goes to the people you're settling with, and your
@@ -44,8 +45,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
   Future<Uint8List> _build(
     List<Transaction> transactions,
     List<CurrencySplit> splits,
-    List<PersonCostTotals> personCosts,
-    Map<String, int> sharerCounts,
+    List<ExpenseShares> resolved,
     Map<String, String> personNames,
     Map<String, String> categoryNames,
   ) {
@@ -55,10 +55,10 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
       personNames: personNames,
       categoryNames: categoryNames,
       splits: splits,
-      personCosts: personCosts,
-      sharerCounts: sharerCounts,
+      resolved: resolved,
       includeExpensesTable: _expensesTable,
-      includePersonCosts: _personCosts,
+      includeCategoryChart: _categoryChart,
+      includePersonSpend: _personSpend,
       includeStatement: _statement,
       includeConsolidate: _consolidate,
       includePersonal: _personal,
@@ -70,12 +70,9 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
     final t = _t;
     final txnsAsync = ref.watch(transactionsByMemoryProvider(_memoryId));
     final splitsAsync = ref.watch(memorySplitResultsProvider(_memoryId));
-    // 各人收支 must honour the 个人消费 switch, or the PDF would total up rows
-    // it doesn't list.
-    final costsAsync = ref.watch(memoryPersonCostsProvider(
-        (memoryId: _memoryId, includePersonal: _personal)));
-    // Head count per AA expense, so the 明细 can print "AA ÷N" and make an
-    // exclusion visible without cross-referencing the statement.
+    // Per-expense shares: drives 各人消费's spelled-out arithmetic and the
+    // "AA ÷N" label. The PDF applies the 个人消费 filter itself, so this is the
+    // unfiltered set.
     final resolvedAsync = ref.watch(memoryResolvedExpensesProvider(_memoryId));
     final persons = ref.watch(personsProvider).value ?? const [];
     final me = ref.watch(mePersonProvider).value;
@@ -102,8 +99,8 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
           _buildToggles(),
           Divider(height: 1, color: t.borderColor),
           Expanded(
-            child: _buildPreview(txnsAsync, splitsAsync, costsAsync,
-                resolvedAsync, personNames, categoryNames),
+            child: _buildPreview(txnsAsync, splitsAsync, resolvedAsync,
+                personNames, categoryNames),
           ),
         ],
       ),
@@ -133,8 +130,10 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
         children: [
           row('支出明细', '所有支出，按币种分组', _expensesTable,
               (v) => setState(() => _expensesTable = v)),
-          row('各人收支', '每人付了多少、承担多少、差额', _personCosts,
-              (v) => setState(() => _personCosts = v)),
+          row('分类占比', '各类别花了多少（含图表）', _categoryChart,
+              (v) => setState(() => _categoryChart = v)),
+          row('各人消费', '每人这趟实际花了多少（含算式）', _personSpend,
+              (v) => setState(() => _personSpend = v)),
           row('付款表', '谁欠谁多少（矩阵）', _statement,
               (v) => setState(() => _statement = v)),
           row('最终结算', '两两抵消后的应付', _consolidate,
@@ -150,7 +149,6 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
   Widget _buildPreview(
     AsyncValue<List<Transaction>> txnsAsync,
     AsyncValue<List<CurrencySplit>> splitsAsync,
-    AsyncValue<List<PersonCostTotals>> costsAsync,
     AsyncValue<List<ResolvedExpense>> resolvedAsync,
     Map<String, String> personNames,
     Map<String, String> categoryNames,
@@ -159,7 +157,11 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
 
     // Nothing selected → no document to render. (个人消费 is a filter, not a
     // section — on its own it produces nothing.)
-    if (!_expensesTable && !_personCosts && !_statement && !_consolidate) {
+    if (!_expensesTable &&
+        !_categoryChart &&
+        !_personSpend &&
+        !_statement &&
+        !_consolidate) {
       return Center(
         child: Text('请至少选择一个区块',
             style: TextStyle(color: t.textSecondary, fontSize: 13)),
@@ -168,12 +170,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
 
     // The three sources feed one document, so render only once all have landed
     // rather than nesting three .when()s deep.
-    final sources = <AsyncValue<Object>>[
-      txnsAsync,
-      splitsAsync,
-      costsAsync,
-      resolvedAsync,
-    ];
+    final sources = <AsyncValue<Object>>[txnsAsync, splitsAsync, resolvedAsync];
     for (final a in sources) {
       if (a.hasError) return Center(child: Text('加载失败：${a.error}'));
     }
@@ -183,18 +180,10 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
 
     return PdfPreview(
       // Force a fresh render whenever the selection changes.
-      key: ValueKey(Object.hash(
-          _expensesTable, _personCosts, _statement, _consolidate, _personal)),
-      build: (_) => _build(
-          txnsAsync.value!,
-          splitsAsync.value!,
-          costsAsync.value!,
-          {
-            for (final r in resolvedAsync.value!)
-              if (r.tx.splitType == 'split_aa') r.tx.id: r.shares.length,
-          },
-          personNames,
-          categoryNames),
+      key: ValueKey(Object.hash(_expensesTable, _categoryChart, _personSpend,
+          _statement, _consolidate, _personal)),
+      build: (_) => _build(txnsAsync.value!, splitsAsync.value!,
+          resolvedAsync.value!, personNames, categoryNames),
       allowPrinting: true,
       allowSharing: true,
       canChangePageFormat: false,

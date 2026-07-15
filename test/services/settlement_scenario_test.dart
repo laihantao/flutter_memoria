@@ -238,6 +238,63 @@ void main() {
       }
     });
 
+    test('net == 0 does NOT mean settled — pairwise netting is not global', () {
+      // Reported from a real statement: 汉涛's 付款 equalled his 承担, the PDF
+      // called it 已结清, yet he still owed Chiahong 30. Netting is per-pair, so
+      // a person can be square overall and still have two transfers to make.
+      const chiahong = 'chiahong';
+      const hantao = 'hantao';
+      final r = service.compute(
+        transactions: [
+          // Chiahong pays 60 split with hantao → hantao owes chiahong 30.
+          SplitTxn(
+              currencyCode: 'MYR',
+              payerPersonId: chiahong,
+              amount: 60,
+              shares: {chiahong: 30, hantao: 30}),
+          // hantao pays 60 split with alex → alex owes hantao 30.
+          SplitTxn(
+              currencyCode: 'MYR',
+              payerPersonId: hantao,
+              amount: 60,
+              shares: {hantao: 30, _alex: 30}),
+        ],
+        participantIds: [hantao, chiahong, _alex],
+      );
+      final costs = service.personCosts(
+        transactions: [
+          SplitTxn(
+              currencyCode: 'MYR',
+              payerPersonId: chiahong,
+              amount: 60,
+              shares: {chiahong: 30, hantao: 30}),
+          SplitTxn(
+              currencyCode: 'MYR',
+              payerPersonId: hantao,
+              amount: 60,
+              shares: {hantao: 30, _alex: 30}),
+        ],
+        participantIds: [hantao, chiahong, _alex],
+      );
+
+      // Square on paper...
+      expect(costOf(costs, hantao).paid, 60);
+      expect(costOf(costs, hantao).borne, 60);
+      expect(costOf(costs, hantao).net, 0);
+
+      // ...yet he must pay 30 and collect 30. Two real transfers.
+      final debts = r.single.consolidated;
+      expect(debts, hasLength(2));
+      expect(
+        debts.singleWhere((d) => d.fromPersonId == hantao).toPersonId,
+        chiahong,
+      );
+      expect(debts.singleWhere((d) => d.fromPersonId == hantao).amount, 30);
+      expect(debts.singleWhere((d) => d.toPersonId == hantao).fromPersonId,
+          _alex);
+      expect(debts.singleWhere((d) => d.toPersonId == hantao).amount, 30);
+    });
+
     test('a fully settled pair is omitted rather than shown as zero', () {
       // me pays 100 split 2 ways; alex pays 100 split 2 ways → both owe 50.
       final r = service.compute(

@@ -148,26 +148,37 @@ void main() {
     });
   });
 
-  group('各人收支 card', () {
-    testWidgets('shows paid, borne and the net position per person',
+  group('各人消费 card', () {
+    testWidgets('shows what each person bore, with what they fronted',
         (tester) async {
       await _pumpDashboard(tester);
 
-      expect(find.text('各人收支'), findsOneWidget);
-      expect(find.text('付 RM 180.00 · 担 RM 130.00'), findsOneWidget); // me
-      expect(find.text('付 RM 300.00 · 担 RM 350.00'), findsOneWidget); // Alice
-      // paid − borne: me is owed 50, Alice owes 50 — matching the AA split.
-      expect(find.text('应收 RM 50.00'), findsOneWidget);
-      expect(find.text('应付 RM 50.00'), findsOneWidget);
+      expect(find.text('各人消费'), findsOneWidget);
+      // 承担 is the headline figure; 垫付 is context.
+      expect(find.text('RM 130.00'), findsWidgets); // me bore
+      expect(find.text('RM 350.00'), findsOneWidget); // Alice bore
+      expect(find.text('垫付 RM 180.00'), findsOneWidget); // me
+      expect(find.text('垫付 RM 300.00'), findsOneWidget); // Alice
     });
 
-    testWidgets('is hidden under 我的 — 收支 is a whole-team question',
+    testWidgets('never claims 已结清 — net zero does not mean no transfers',
+        (tester) async {
+      // paid − borne is a *net* position and netting is pairwise, so someone
+      // square overall can still owe one person and be owed by another. The
+      // card must not editorialise; only the settlement can answer that.
+      await _pumpDashboard(tester);
+      expect(find.text('已结清'), findsNothing);
+      expect(find.textContaining('应收'), findsNothing);
+      expect(find.textContaining('应付'), findsNothing);
+    });
+
+    testWidgets('is hidden under 我的 — this is a whole-team question',
         (tester) async {
       await _pumpDashboard(tester);
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
 
-      expect(find.text('各人收支'), findsNothing);
+      expect(find.text('各人消费'), findsNothing);
     });
   });
 }

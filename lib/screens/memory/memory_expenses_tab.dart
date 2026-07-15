@@ -729,13 +729,15 @@ class _DonutPainter extends CustomPainter {
       old.values != values || old.holeColor != holeColor;
 }
 
-// ── 各人收支 card ─────────────────────────────────────────────────────────────
+// ── 各人消费 card ─────────────────────────────────────────────────────────────
 
-/// Who fronted what vs who actually bore what, per currency.
+/// What the trip cost each person (承担), with what they fronted (付款) as
+/// context.
 ///
-/// 差额 = 付款 − 承担, which is exactly that person's net settlement position:
-/// positive means the others owe them. 个人 and 请客 move 付款 and 承担 by the
-/// same amount, so they show up in the detail without disturbing 差额.
+/// Deliberately shows no 差额 / 已结清. paid − borne is a person's *net*
+/// position, and netting is pairwise: someone can be square overall and still
+/// owe one companion while another owes them, so "已结清" would be a lie
+/// exactly when it matters. Who-pays-whom is the PDF statement's job.
 class _PersonCostsCard extends ConsumerWidget {
   final String memoryId;
   const _PersonCostsCard({required this.memoryId});
@@ -762,7 +764,7 @@ class _PersonCostsCard extends ConsumerWidget {
     }
 
     return _StatCard(
-      title: '各人收支',
+      title: '各人消费',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -799,8 +801,6 @@ class _PersonCostRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
     final c = totals.currencyCode;
-    final net = totals.net;
-    final settled = net == 0;
 
     return Row(
       children: [
@@ -826,8 +826,7 @@ class _PersonCostRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                '付 ${formatMoneyWithSymbol(totals.paid, c)} · '
-                '担 ${formatMoneyWithSymbol(totals.borne, c)}',
+                '垫付 ${formatMoneyWithSymbol(totals.paid, c)}',
                 style: GoogleFonts.notoSansSc(
                     fontSize: 11.5, color: t.textSecondary),
               ),
@@ -835,17 +834,11 @@ class _PersonCostRow extends StatelessWidget {
           ),
         ),
         Text(
-          settled
-              ? '已结清'
-              : '${net > 0 ? '应收' : '应付'} '
-                  '${formatMoneyWithSymbol(net.abs(), c)}',
-          style: GoogleFonts.notoSansSc(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            color: settled
-                ? t.textSecondary
-                : (net > 0 ? Colors.green.shade600 : Colors.red.shade400),
-          ),
+          formatMoneyWithSymbol(totals.borne, c),
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: t.textPrimary),
         ),
       ],
     );

@@ -134,8 +134,16 @@ class PersonCostTotals {
     required this.borne,
   });
 
-  /// paid − borne. Positive → others owe them this much; negative → they owe.
-  /// Equals their net position across the consolidated debts.
+  /// paid − borne: their net position, i.e. the sum of everything they will
+  /// receive minus everything they will pay.
+  ///
+  /// ⚠️ **`net == 0` does NOT mean "settled"** — do not present it that way.
+  /// Netting is pairwise, never global (Req E), so someone can owe A and be
+  /// owed the same by B and still have to make both transfers. Only the
+  /// consolidated debts say whether anyone has to move money.
+  ///
+  /// Useful as a cross-check (it must equal their total cash flow across
+  /// [ConsolidatedDebt]s) rather than as something to show a reader.
   double get net => roundHalfUp(paid - borne);
 }
 
