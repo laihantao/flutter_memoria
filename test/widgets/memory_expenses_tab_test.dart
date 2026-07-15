@@ -138,13 +138,18 @@ void main() {
       expect(find.text('RM 480.00'), findsNothing);
     });
 
-    testWidgets('the budget card follows the lens', (tester) async {
+    testWidgets('the budget card is hidden under 我的 — the budget is team-wide',
+        (tester) async {
+      // A budget is one row per (memory, currency); there is no per-person
+      // budget. Showing the same figure under 我的 would invite reading the
+      // team's budget as a personal allowance.
       await _pumpDashboard(tester);
       expect(find.text('预算 · 全队'), findsOneWidget);
 
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      expect(find.text('预算 · 我的'), findsOneWidget);
+      expect(find.text('预算 · 全队'), findsNothing);
+      expect(find.textContaining('预算'), findsNothing);
     });
   });
 

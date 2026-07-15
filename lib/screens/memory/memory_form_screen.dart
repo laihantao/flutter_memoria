@@ -469,7 +469,7 @@ class _LocationsEditorState extends State<_LocationsEditor> {
           controller: _searchCtrl,
           onChanged: _onChanged,
           decoration: InputDecoration(
-            hintText: '搜索地点…',
+            hintText: context.l10n.memorySearchLocationHint,
             prefixIcon:
                 const Icon(Icons.search, size: 20),
             suffixIcon: _isSearching
@@ -581,10 +581,10 @@ class _LocationsEditorState extends State<_LocationsEditor> {
                 const Icon(Icons.info_outline,
                     size: 14, color: AppColors.warmBrown),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    '未找到相关地点',
-                    style: TextStyle(
+                    context.l10n.memoryNoLocationFound,
+                    style: const TextStyle(
                         fontSize: 12, color: AppColors.warmBrown),
                   ),
                 ),
@@ -595,7 +595,7 @@ class _LocationsEditorState extends State<_LocationsEditor> {
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                   onPressed: _addManual,
-                  child: const Text('手动添加',
+                  child: Text(context.l10n.memoryAddManually,
                       style: TextStyle(fontSize: 12)),
                 ),
               ],
@@ -617,8 +617,8 @@ class _LocationCard extends StatelessWidget {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('无法打开地图'),
+          SnackBar(
+            content: Text(context.l10n.memoryMapOpenFailed),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -649,13 +649,13 @@ class _LocationCard extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.map_outlined,
                 size: 18, color: AppColors.warmBrown),
-            tooltip: '在地图中查看',
+            tooltip: context.l10n.memoryViewOnMap,
             onPressed: () => _openMaps(context),
           ),
           IconButton(
             icon: const Icon(Icons.close,
                 size: 18, color: AppColors.warmBrown),
-            tooltip: '删除',
+            tooltip: context.l10n.delete,
             onPressed: onDelete,
           ),
         ],

@@ -97,6 +97,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get memoriesAdd => 'Add Moment';
 
   // ── Memory form ───────────────────────────────────────────────────────────
+  @override String get memorySearchLocationHint => 'Search places…';
+  @override String get memoryNoLocationFound => 'No matching places';
+  @override String get memoryAddManually => 'Add manually';
+  @override String get memoryViewOnMap => 'View on map';
   @override String get memoryFormNew => 'New Moment';
   @override String get memoryFormEdit => 'Edit Moment';
   @override String get memoryStartRequired => 'Start date is required';
@@ -154,6 +158,118 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String memoryExpenseCount(int n) => '$n transactions';
   @override String memoryExpenseTotal(String sym, String amount) =>
       'Total $sym $amount';
+  @override String memoryDurationNights(int days, int nights) =>
+      '$days ${days == 1 ? 'day' : 'days'} $nights ${nights == 1 ? 'night' : 'nights'}';
+  @override String memoryDateRange(DateTime start, DateTime? end) {
+    final full = DateFormat('d MMM yyyy');
+    if (end == null) return full.format(start);
+    final startStr = start.year == end.year
+        ? DateFormat('d MMM').format(start)
+        : full.format(start);
+    return '$startStr – ${full.format(end)}';
+  }
+  @override String memoryCountdownDays(int n) =>
+      n == 1 ? '1 day to go' : '$n days to go';
+  @override String get memoryCountdownToday => 'Today ✦';
+  @override String get memoryCountdownPast => 'A memory now';
+  @override String memoryParticipantCount(int n) =>
+      n == 1 ? '1 person' : '$n people';
+  @override String get memoryDeleteTitle => 'Delete Moment';
+  @override String memoryDeleteBody(String title) =>
+      'This permanently deletes "$title" and everything linked to it — itinerary, gallery and expenses. This cannot be undone.';
+  @override String get memoryDeleteConfirm => 'Delete';
+  @override String memoryDeleteFailed(String e) => 'Delete failed: $e';
+  @override String get memoryDeleteIrreversible => 'This cannot be undone';
+  @override String get memoryStatStops => 'Stops';
+  @override String get memoryStatBudget => 'Budget';
+  @override String get memoryMapOpenFailed => 'Could not open maps';
+  @override String get memoryLocationsTitle => 'Places';
+  @override String memoryStopCount(int n) =>
+      n == 1 ? '· 1 stop' : '· $n stops';
+  @override String memoryStopNumber(int n) => 'Stop $n';
+  @override String get memoryNoContacts => 'No contacts yet';
+  @override String get memoryYouSuffix => '(you)';
+  @override String get memoryAddFirstDay => 'Add the first day';
+  @override String get memoryAddDay => 'Add another day';
+  @override String get memoryDeleteStopTitle => 'Delete stop';
+  @override String get memoryDeleteStopBody => 'Delete this stop?';
+  @override String get memoryDeleteDayTitle => 'Delete this day';
+  @override String get memoryDeleteDayBody =>
+      'Every stop on this day will be deleted too.';
+  @override String memoryDayLabel(int n) => 'Day $n';
+  @override String get memoryNoStops => 'No stops yet — add one below';
+  @override String get memoryAddStop => 'Add stop';
+  @override String get memoryEditStop => 'Edit stop';
+  @override String get memoryPickLocation => 'Pick a place';
+  @override String get memoryPickLocationOptional => 'Pick a place (optional)';
+  @override String get memoryNoLocation => 'No place';
+  @override String get memoryAddLocation => 'Add a place';
+  @override String get memoryLocationNameHint => 'Place name';
+  @override String get memoryStopActivityHint => 'What happens here?';
+  @override String get memoryTimeOptional => 'Time (optional)';
+  @override String get memoryItineraryStopsTitle => 'Itinerary stops';
+  @override String memoryDaysAndStops(int days, int stops) {
+    final s = stops == 1 ? '1 stop' : '$stops stops';
+    if (days <= 0) return '· $s';
+    return '· ${days == 1 ? '1 day' : '$days days'} · $s';
+  }
+  @override String get memoryVideoFailed => 'Could not play video';
+  @override String get memoryExportSection => 'Export';
+  @override String get memoryExportPdfButton => 'Export PDF';
+  @override String get memoryThemeSection => 'Theme';
+
+  // ── Memory expenses tab ────────────────────────────────────────────────────
+  @override String get memoryExpensesStatsTab => 'Stats';
+  @override String get memoryExpensesListTab => 'List';
+  @override String get memoryLensTeam => 'Everyone';
+  @override String get memoryLensMine => 'Mine';
+  @override String get memoryMyExpenses => 'My spending';
+  @override String get memoryTotalExpenses => 'Total spending';
+  @override String get memoryNoMyExpenses => 'You bear none of the costs here';
+  @override String get memoryNoExpensesYet => 'No expenses yet';
+  @override String get memoryBudgetTeamTitle => 'Budget · Everyone';
+  @override String get memoryBudgetTeamOnlyHint =>
+      'The budget covers the whole moment; it is not split per person';
+  @override String get memoryBudgetEditTooltip => 'Edit budget';
+  @override String get memoryBudgetSetCta => 'Set a budget for this moment';
+  @override String get memoryBudgetSetButton => 'Set budget';
+  @override String memoryBudgetOver(String amount) => '$amount over';
+  @override String memoryBudgetLeft(String amount) => '$amount left';
+  @override String memoryBudgetSpent(String amount) => 'Spent $amount';
+  @override String get memoryMyShareTitle => 'What I bear';
+  @override String get memoryTeamTotalTitle => 'Team total';
+  @override String memoryTxnCount(int n) => n == 1 ? '1 item' : '$n items';
+  @override String get memoryCategoryBreakdown => 'By category';
+  @override String get memoryNoSpendInCurrency =>
+      'No spending in this currency';
+  @override String get memoryTotal => 'Total';
+  @override String get memoryPersonRemoved => 'Removed';
+  @override String get memoryPerPersonTitle => 'Per person';
+  @override String memoryPaidUpfront(String amount) => 'Paid $amount';
+  @override String get memoryBudgetSheetHint =>
+      'Set one per currency; leave blank for no budget';
+
+  // ── Memory PDF export ──────────────────────────────────────────────────────
+  @override String get exportPdfTitle => 'Export PDF';
+  @override String get exportBlockExpenses => 'Expense list';
+  @override String get exportBlockExpensesHint =>
+      'Every expense, grouped by currency';
+  @override String get exportBlockCategory => 'By category';
+  @override String get exportBlockCategoryHint =>
+      'What each category cost, with a chart';
+  @override String get exportBlockPersonSpend => 'Per person';
+  @override String get exportBlockPersonSpendHint =>
+      'What each person actually bore, with the maths';
+  @override String get exportBlockStatement => 'Payment table';
+  @override String get exportBlockStatementHint => 'Who owes whom (matrix)';
+  @override String get exportBlockConsolidate => 'Final settlement';
+  @override String get exportBlockConsolidateHint =>
+      'What is owed after cancelling out';
+  @override String get exportIncludePersonal => 'Include personal spending';
+  @override String get exportIncludePersonalHint =>
+      'Personal spending is not settled, and usually not for others to see';
+  @override String get exportPickAtLeastOne => 'Pick at least one section';
+  @override String exportLoadFailed(String e) => 'Failed to load: $e';
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   @override String get expensesTitle => 'Expenses';
@@ -208,6 +324,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get expenseFormNoWallet => 'No wallet';
   @override String get expenseFormDone => 'Done';
   @override String get expenseFormToday => 'Today';
+  @override String get expenseFormManage => 'Manage';
+  @override String get expenseFormMemory => 'Moment';
+  @override String get expenseFormLinkMemoryHint =>
+      '(link a moment to split it)';
+  @override String get expenseFormTreatWho => 'Who is treating (bears it all)';
+  @override String get expenseFormPersonalHint =>
+      'This one is not settled — nobody else shares it';
+  @override String get expenseFormNoParticipants =>
+      'No participants yet — add them to the moment first';
+  @override String get expenseFormExcluded => 'Not sharing';
+  @override String expenseFormPayerSuffix(String name) => '$name (paid)';
+  @override String expenseFormPerHead(String amount, int n) =>
+      '$amount each · split $n ways';
 
   // ── Transaction form ───────────────────────────────────────────────────────
   @override String get txFormNew => 'New Transaction';

@@ -114,6 +114,10 @@ abstract class AppLocalizations {
   String get memoriesAdd;
 
   // ── Memory form ───────────────────────────────────────────────────────────
+  String get memorySearchLocationHint;
+  String get memoryNoLocationFound;
+  String get memoryAddManually;
+  String get memoryViewOnMap;
   String get memoryFormNew;
   String get memoryFormEdit;
   String get memoryStartRequired;
@@ -162,6 +166,93 @@ abstract class AppLocalizations {
   String get memoryRecordExpense;
   String memoryExpenseCount(int n);
   String memoryExpenseTotal(String sym, String amount);
+  String memoryDurationNights(int days, int nights);
+  String memoryDateRange(DateTime start, DateTime? end);
+  String memoryCountdownDays(int n);
+  String get memoryCountdownToday;
+  String get memoryCountdownPast;
+  String memoryParticipantCount(int n);
+  String get memoryDeleteTitle;
+  String memoryDeleteBody(String title);
+  String get memoryDeleteConfirm;
+  String memoryDeleteFailed(String e);
+  String get memoryDeleteIrreversible;
+  String get memoryStatStops;
+  String get memoryStatBudget;
+  String get memoryMapOpenFailed;
+  String get memoryLocationsTitle;
+  String memoryStopCount(int n);
+  String memoryStopNumber(int n);
+  String get memoryNoContacts;
+  String get memoryYouSuffix;
+  String get memoryAddFirstDay;
+  String get memoryAddDay;
+  String get memoryDeleteStopTitle;
+  String get memoryDeleteStopBody;
+  String get memoryDeleteDayTitle;
+  String get memoryDeleteDayBody;
+  String memoryDayLabel(int n);
+  String get memoryNoStops;
+  String get memoryAddStop;
+  String get memoryEditStop;
+  String get memoryPickLocation;
+  String get memoryPickLocationOptional;
+  String get memoryNoLocation;
+  String get memoryAddLocation;
+  String get memoryLocationNameHint;
+  String get memoryStopActivityHint;
+  String get memoryTimeOptional;
+  String get memoryItineraryStopsTitle;
+  String memoryDaysAndStops(int days, int stops);
+  String get memoryVideoFailed;
+  String get memoryExportSection;
+  String get memoryExportPdfButton;
+  String get memoryThemeSection;
+
+  // ── Memory expenses tab ────────────────────────────────────────────────────
+  String get memoryExpensesStatsTab;
+  String get memoryExpensesListTab;
+  String get memoryLensTeam;
+  String get memoryLensMine;
+  String get memoryMyExpenses;
+  String get memoryTotalExpenses;
+  String get memoryNoMyExpenses;
+  String get memoryNoExpensesYet;
+  String get memoryBudgetTeamTitle;
+  String get memoryBudgetTeamOnlyHint;
+  String get memoryBudgetEditTooltip;
+  String get memoryBudgetSetCta;
+  String get memoryBudgetSetButton;
+  String memoryBudgetOver(String amount);
+  String memoryBudgetLeft(String amount);
+  String memoryBudgetSpent(String amount);
+  String get memoryMyShareTitle;
+  String get memoryTeamTotalTitle;
+  String memoryTxnCount(int n);
+  String get memoryCategoryBreakdown;
+  String get memoryNoSpendInCurrency;
+  String get memoryTotal;
+  String get memoryPersonRemoved;
+  String get memoryPerPersonTitle;
+  String memoryPaidUpfront(String amount);
+  String get memoryBudgetSheetHint;
+
+  // ── Memory PDF export ──────────────────────────────────────────────────────
+  String get exportPdfTitle;
+  String get exportBlockExpenses;
+  String get exportBlockExpensesHint;
+  String get exportBlockCategory;
+  String get exportBlockCategoryHint;
+  String get exportBlockPersonSpend;
+  String get exportBlockPersonSpendHint;
+  String get exportBlockStatement;
+  String get exportBlockStatementHint;
+  String get exportBlockConsolidate;
+  String get exportBlockConsolidateHint;
+  String get exportIncludePersonal;
+  String get exportIncludePersonalHint;
+  String get exportPickAtLeastOne;
+  String exportLoadFailed(String e);
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   String get expensesTitle;
@@ -210,6 +301,15 @@ abstract class AppLocalizations {
   String get expenseFormNoWallet;
   String get expenseFormDone;
   String get expenseFormToday;
+  String get expenseFormManage;
+  String get expenseFormMemory;
+  String get expenseFormLinkMemoryHint;
+  String get expenseFormTreatWho;
+  String get expenseFormPersonalHint;
+  String get expenseFormNoParticipants;
+  String get expenseFormExcluded;
+  String expenseFormPayerSuffix(String name);
+  String expenseFormPerHead(String amount, int n);
 
   // ── Transaction form (legacy wallet flow) ─────────────────────────────────
   String get txFormNew;

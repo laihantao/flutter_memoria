@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:printing/printing.dart';
 
 import '../../data/app_database.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/person_provider.dart';
 import '../../services/expense_split_service.dart';
@@ -90,7 +91,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
         backgroundColor: t.surfaceColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: Text('导出 PDF',
+        title: Text(context.l10n.exportPdfTitle,
             style: TextStyle(color: t.textPrimary, fontSize: 16)),
         iconTheme: IconThemeData(color: t.textSecondary),
       ),
@@ -109,6 +110,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
 
   Widget _buildToggles() {
     final t = _t;
+    final l10n = context.l10n;
     Widget row(String label, String hint, bool value,
         ValueChanged<bool> onChanged) {
       return SwitchListTile.adaptive(
@@ -128,19 +130,19 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
       color: t.surfaceColor,
       child: Column(
         children: [
-          row('支出明细', '所有支出，按币种分组', _expensesTable,
-              (v) => setState(() => _expensesTable = v)),
-          row('分类占比', '各类别花了多少（含图表）', _categoryChart,
-              (v) => setState(() => _categoryChart = v)),
-          row('各人消费', '每人这趟实际花了多少（含算式）', _personSpend,
-              (v) => setState(() => _personSpend = v)),
-          row('付款表', '谁欠谁多少（矩阵）', _statement,
-              (v) => setState(() => _statement = v)),
-          row('最终结算', '两两抵消后的应付', _consolidate,
-              (v) => setState(() => _consolidate = v)),
+          row(l10n.exportBlockExpenses, l10n.exportBlockExpensesHint,
+              _expensesTable, (v) => setState(() => _expensesTable = v)),
+          row(l10n.exportBlockCategory, l10n.exportBlockCategoryHint,
+              _categoryChart, (v) => setState(() => _categoryChart = v)),
+          row(l10n.exportBlockPersonSpend, l10n.exportBlockPersonSpendHint,
+              _personSpend, (v) => setState(() => _personSpend = v)),
+          row(l10n.exportBlockStatement, l10n.exportBlockStatementHint,
+              _statement, (v) => setState(() => _statement = v)),
+          row(l10n.exportBlockConsolidate, l10n.exportBlockConsolidateHint,
+              _consolidate, (v) => setState(() => _consolidate = v)),
           Divider(height: 1, color: t.borderColor),
-          row('包含个人消费', '个人消费不参与结算，通常无需给同行人看', _personal,
-              (v) => setState(() => _personal = v)),
+          row(l10n.exportIncludePersonal, l10n.exportIncludePersonalHint,
+              _personal, (v) => setState(() => _personal = v)),
         ],
       ),
     );
@@ -163,7 +165,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
         !_statement &&
         !_consolidate) {
       return Center(
-        child: Text('请至少选择一个区块',
+        child: Text(context.l10n.exportPickAtLeastOne,
             style: TextStyle(color: t.textSecondary, fontSize: 13)),
       );
     }
@@ -172,7 +174,9 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
     // rather than nesting three .when()s deep.
     final sources = <AsyncValue<Object>>[txnsAsync, splitsAsync, resolvedAsync];
     for (final a in sources) {
-      if (a.hasError) return Center(child: Text('加载失败：${a.error}'));
+      if (a.hasError) {
+        return Center(child: Text(context.l10n.exportLoadFailed('${a.error}')));
+      }
     }
     if (sources.any((a) => !a.hasValue)) {
       return const Center(child: CircularProgressIndicator());

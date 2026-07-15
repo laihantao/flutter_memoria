@@ -3,6 +3,16 @@ import 'package:intl/intl.dart';
 
 import 'app_localizations.dart';
 
+/// 一 … 二十 for day labels; falls back to digits past twenty.
+String _ordinalChinese(int n) {
+  const nums = [
+    '一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
+    '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
+  ];
+  if (n >= 1 && n <= nums.length) return nums[n - 1];
+  return '$n';
+}
+
 class AppLocalizationsZh extends AppLocalizations {
   const AppLocalizationsZh() : super(const Locale('zh'));
 
@@ -96,6 +106,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get memoriesAdd => '添加时光';
 
   // ── Memory form ───────────────────────────────────────────────────────────
+  @override String get memorySearchLocationHint => '搜索地点…';
+  @override String get memoryNoLocationFound => '未找到相关地点';
+  @override String get memoryAddManually => '手动添加';
+  @override String get memoryViewOnMap => '在地图中查看';
   @override String get memoryFormNew => '新建时光';
   @override String get memoryFormEdit => '编辑时光';
   @override String get memoryStartRequired => '请选择开始日期';
@@ -151,6 +165,102 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String memoryExpenseCount(int n) => '$n 笔记录';
   @override String memoryExpenseTotal(String sym, String amount) =>
       '合计 $sym $amount';
+  @override String memoryDurationNights(int days, int nights) => '$days天$nights夜';
+  @override String memoryDateRange(DateTime start, DateTime? end) {
+    final full = DateFormat('yyyy年M月d日');
+    if (end == null) return full.format(start);
+    final startStr = start.year == end.year
+        ? DateFormat('M月d日').format(start)
+        : full.format(start);
+    return '$startStr – ${full.format(end)}';
+  }
+  @override String memoryCountdownDays(int n) => '还有 $n 天';
+  @override String get memoryCountdownToday => '就是今天 ✦';
+  @override String get memoryCountdownPast => '已成回忆';
+  @override String memoryParticipantCount(int n) => '$n 人同行';
+  @override String get memoryDeleteTitle => '删除回忆';
+  @override String memoryDeleteBody(String title) =>
+      '即将永久删除「$title」及其所有关联数据（行程、相册、费用记录），此操作无法撤销。';
+  @override String get memoryDeleteConfirm => '确认删除';
+  @override String memoryDeleteFailed(String e) => '删除失败：$e';
+  @override String get memoryDeleteIrreversible => '此操作无法撤销';
+  @override String get memoryStatStops => '行程站';
+  @override String get memoryStatBudget => '预算';
+  @override String get memoryMapOpenFailed => '无法打开地图';
+  @override String get memoryLocationsTitle => '行程地点';
+  @override String memoryStopCount(int n) => '· $n 站';
+  @override String memoryStopNumber(int n) => '第 $n 站';
+  @override String get memoryNoContacts => '暂无联系人';
+  @override String get memoryYouSuffix => '（我）';
+  @override String get memoryAddFirstDay => '添加第一天';
+  @override String get memoryAddDay => '添加新一天';
+  @override String get memoryDeleteStopTitle => '删除站点';
+  @override String get memoryDeleteStopBody => '确定要删除这个站点吗？';
+  @override String get memoryDeleteDayTitle => '删除这一天';
+  @override String get memoryDeleteDayBody => '删除后，这天的所有站点也会一并删除。';
+  @override String memoryDayLabel(int n) => '第${_ordinalChinese(n)}天';
+  @override String get memoryNoStops => '暂无站点，点击下方添加';
+  @override String get memoryAddStop => '添加站点';
+  @override String get memoryEditStop => '编辑站点';
+  @override String get memoryPickLocation => '选择地点';
+  @override String get memoryPickLocationOptional => '选择地点（可选）';
+  @override String get memoryNoLocation => '无地点';
+  @override String get memoryAddLocation => '添加新地点';
+  @override String get memoryLocationNameHint => '地点名称';
+  @override String get memoryStopActivityHint => '活动内容（去哪儿，做什么）';
+  @override String get memoryTimeOptional => '时间（可选）';
+  @override String get memoryItineraryStopsTitle => '行程站点';
+  @override String memoryDaysAndStops(int days, int stops) =>
+      days > 0 ? '· $days 天 · $stops 站' : '· $stops 站';
+  @override String get memoryVideoFailed => '无法播放视频';
+  @override String get memoryExportSection => '导出';
+  @override String get memoryExportPdfButton => '导出 PDF';
+  @override String get memoryThemeSection => '主题';
+
+  // ── Memory expenses tab ────────────────────────────────────────────────────
+  @override String get memoryExpensesStatsTab => '统计';
+  @override String get memoryExpensesListTab => '明细';
+  @override String get memoryLensTeam => '全队';
+  @override String get memoryLensMine => '我的';
+  @override String get memoryMyExpenses => '我的消费';
+  @override String get memoryTotalExpenses => '总消费';
+  @override String get memoryNoMyExpenses => '这段记忆里没有你承担的消费';
+  @override String get memoryNoExpensesYet => '还没有消费记录';
+  @override String get memoryBudgetTeamTitle => '预算 · 全队';
+  @override String get memoryBudgetTeamOnlyHint => '预算是整段记忆的，不分到个人';
+  @override String get memoryBudgetEditTooltip => '编辑预算';
+  @override String get memoryBudgetSetCta => '设置这段记忆的预算';
+  @override String get memoryBudgetSetButton => '设置预算';
+  @override String memoryBudgetOver(String amount) => '超支 $amount';
+  @override String memoryBudgetLeft(String amount) => '剩 $amount';
+  @override String memoryBudgetSpent(String amount) => '已花 $amount';
+  @override String get memoryMyShareTitle => '我实际承担';
+  @override String get memoryTeamTotalTitle => '全队总消费';
+  @override String memoryTxnCount(int n) => '$n 笔';
+  @override String get memoryCategoryBreakdown => '分类占比';
+  @override String get memoryNoSpendInCurrency => '该币种暂无支出';
+  @override String get memoryTotal => '总计';
+  @override String get memoryPersonRemoved => '已移除';
+  @override String get memoryPerPersonTitle => '各人消费';
+  @override String memoryPaidUpfront(String amount) => '垫付 $amount';
+  @override String get memoryBudgetSheetHint => '按币种设置，留空表示不设预算';
+
+  // ── Memory PDF export ──────────────────────────────────────────────────────
+  @override String get exportPdfTitle => '导出 PDF';
+  @override String get exportBlockExpenses => '支出明细';
+  @override String get exportBlockExpensesHint => '所有支出，按币种分组';
+  @override String get exportBlockCategory => '分类占比';
+  @override String get exportBlockCategoryHint => '各类别花了多少（含图表）';
+  @override String get exportBlockPersonSpend => '各人消费';
+  @override String get exportBlockPersonSpendHint => '每人这趟实际花了多少（含算式）';
+  @override String get exportBlockStatement => '付款表';
+  @override String get exportBlockStatementHint => '谁欠谁多少（矩阵）';
+  @override String get exportBlockConsolidate => '最终结算';
+  @override String get exportBlockConsolidateHint => '两两抵消后的应付';
+  @override String get exportIncludePersonal => '包含个人消费';
+  @override String get exportIncludePersonalHint => '个人消费不参与结算，通常无需给同行人看';
+  @override String get exportPickAtLeastOne => '请至少选择一个区块';
+  @override String exportLoadFailed(String e) => '加载失败：$e';
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   @override String get expensesTitle => '记账';
@@ -204,6 +314,16 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get expenseFormNoWallet => '不关联账本';
   @override String get expenseFormDone => '完成';
   @override String get expenseFormToday => '今天';
+  @override String get expenseFormManage => '管理';
+  @override String get expenseFormMemory => '记忆';
+  @override String get expenseFormLinkMemoryHint => '（关联记忆后可分摊）';
+  @override String get expenseFormTreatWho => '谁请客（承担全额）';
+  @override String get expenseFormPersonalHint => '这笔不参与结算，其他人无需分摊';
+  @override String get expenseFormNoParticipants => '暂无参与者，请先在记忆中添加同行人';
+  @override String get expenseFormExcluded => '不参与分摊';
+  @override String expenseFormPayerSuffix(String name) => '$name（付款）';
+  @override String expenseFormPerHead(String amount, int n) =>
+      '每人 $amount · $n 人分摊';
 
   // ── Transaction form ───────────────────────────────────────────────────────
   @override String get txFormNew => '新建交易';

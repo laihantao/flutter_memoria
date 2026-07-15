@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -34,32 +33,24 @@ import 'memory_expenses_tab.dart';
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
-String _durationText(Memory memory) {
+String _durationText(Memory memory, AppLocalizations l10n) {
   if (memory.endDate == null) return '';
   final diff = memory.endDate!.difference(memory.startDate).inDays;
   if (diff <= 0) return '';
-  return '${diff + 1}天$diff夜';
+  return l10n.memoryDurationNights(diff + 1, diff);
 }
 
-String _dateText(Memory memory) {
-  final yearFmt = DateFormat('d MMM yyyy');
-  final shortFmt = DateFormat('d MMM');
-  if (memory.endDate == null) return yearFmt.format(memory.startDate);
-  final sameYear = memory.startDate.year == memory.endDate!.year;
-  final start = sameYear
-      ? shortFmt.format(memory.startDate)
-      : yearFmt.format(memory.startDate);
-  return '$start – ${yearFmt.format(memory.endDate!)}';
-}
+String _dateText(Memory memory, AppLocalizations l10n) =>
+    l10n.memoryDateRange(memory.startDate, memory.endDate);
 
-String _countdownText(DateTime startDate) {
+String _countdownText(DateTime startDate, AppLocalizations l10n) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final start = DateTime(startDate.year, startDate.month, startDate.day);
   final diff = start.difference(today).inDays;
-  if (diff > 0) return '还有 $diff 天';
-  if (diff == 0) return '就是今天 ✦';
-  return '已成回忆';
+  if (diff > 0) return l10n.memoryCountdownDays(diff);
+  if (diff == 0) return l10n.memoryCountdownToday;
+  return l10n.memoryCountdownPast;
 }
 
 String _typeEmoji(String type) => switch (type) {
@@ -272,22 +263,21 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
   }
 
   Future<void> _deleteMemory(Memory memory) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除回忆'),
-        content: Text(
-          '即将永久删除「${memory.title}」及其所有关联数据（行程、相册、费用记录），此操作无法撤销。',
-        ),
+        title: Text(l10n.memoryDeleteTitle),
+        content: Text(l10n.memoryDeleteBody(memory.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('确认删除'),
+            child: Text(l10n.memoryDeleteConfirm),
           ),
         ],
       ),
@@ -299,17 +289,17 @@ class _MemoryDetailScreenState extends ConsumerState<MemoryDetailScreen>
       if (mounted) {
         context.pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已删除'),
+          SnackBar(
+            content: Text(l10n.deletedSuccess),
             behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败：$e')),
+          SnackBar(content: Text(l10n.memoryDeleteFailed('$e'))),
         );
       }
     }
@@ -499,12 +489,13 @@ class _HeroCoverState extends ConsumerState<_HeroCover> {
       }
     }
 
+    final l10n = context.l10n;
     final participantsAsync =
         ref.watch(memoryParticipantsProvider(widget.memoryId));
     final participants = participantsAsync.value ?? [];
-    final duration = _durationText(memory);
-    final dateStr = _dateText(memory);
-    final countdown = _countdownText(memory.startDate);
+    final duration = _durationText(memory, l10n);
+    final dateStr = _dateText(memory, l10n);
+    final countdown = _countdownText(memory.startDate, l10n);
     final topPad = MediaQuery.of(context).padding.top;
 
     return SizedBox(
@@ -769,15 +760,12 @@ class _CollapsedInfoStrip extends ConsumerWidget {
     final primary = Theme.of(context).extension<AppThemeExtension>()!.accentColor;
     final primaryTint = Theme.of(context).extension<AppThemeExtension>()!.accentColor.withValues(alpha: 0.18);
 
-    final duration = _durationText(memory);
-    final dateStr = _dateText(memory);
+    final l10n = context.l10n;
+    final duration = _durationText(memory, l10n);
+    final dateStr = _dateText(memory, l10n);
 
     final participantsAsync = ref.watch(memoryParticipantsProvider(memoryId));
     final participants = participantsAsync.value ?? [];
-    const d = 26.0;
-    const step = 9.0;
-    final shown = participants.take(4).toList();
-    final stackW = shown.isEmpty ? 0.0 : d + (shown.length - 1) * (d - step);
 
     return Container(
       width: double.infinity,
@@ -830,27 +818,20 @@ class _CollapsedInfoStrip extends ConsumerWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                if (shown.isNotEmpty)
-                  SizedBox(
-                    width: stackW,
-                    height: d,
-                    child: Stack(
-                      children: [
-                        for (int i = 0; i < shown.length; i++)
-                          Positioned(
-                            left: i * (d - step),
-                            child: _AvatarCircle(
-                              personId: shown[i].personId,
-                              diameter: d,
-                              borderColor: bg,
-                            ),
-                          ),
-                      ],
-                    ),
+                Flexible(
+                  child: _AvatarStack(
+                    participants: participants,
+                    diameter: 26,
+                    borderColor: bg,
+                    overflowFill: Theme.of(context)
+                        .extension<AppThemeExtension>()!
+                        .mutedColor,
+                    overflowText: textMuted,
                   ),
+                ),
                 const SizedBox(width: 8),
                 Text(
-                  '${participants.length} 人同行',
+                  context.l10n.memoryParticipantCount(participants.length),
                   style: GoogleFonts.notoSansSc(
                     fontSize: 12, fontWeight: FontWeight.w600, color: textMuted,
                   ),
@@ -955,42 +936,33 @@ class _HeroAvatarStack extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    const d = 31.0;
-    const step = 11.0;
-    final shown = participants.take(4).toList();
-    final stackWidth =
-        shown.isEmpty ? 0.0 : d + (shown.length - 1) * (d - step);
+    void openPicker() => showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
+        );
 
     return GestureDetector(
-      onTap: () => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
-      ),
+      onTap: openPicker,
       child: Row(
         children: [
-          if (shown.isNotEmpty)
-            SizedBox(
-              width: stackWidth,
-              height: d,
-              child: Stack(
-                children: [
-                  for (int i = 0; i < shown.length; i++)
-                    Positioned(
-                      left: i * (d - step),
-                      child: _AvatarCircle(
-                        personId: shown[i].personId,
-                        diameter: d,
-                        borderColor: AppColors.primaryDeep,
-                      ),
-                    ),
-                ],
+          // Flexible so the count and the add button keep their room and the
+          // stack tightens instead of overflowing.
+          if (participants.isNotEmpty) ...[
+            Flexible(
+              child: _AvatarStack(
+                participants: participants,
+                diameter: 31,
+                borderColor: AppColors.primaryDeep,
+                overflowFill: AppColors.primaryDeep,
+                overflowText: Colors.white,
               ),
             ),
-          if (shown.isNotEmpty) const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           Text(
-            '${participants.length} 人同行',
+            context.l10n.memoryParticipantCount(participants.length),
             style: GoogleFonts.notoSansSc(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -999,12 +971,7 @@ class _HeroAvatarStack extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => _ParticipantPickerSheet(memoryId: memoryId),
-            ),
+            onTap: openPicker,
             child: Container(
               width: 26,
               height: 26,
@@ -1050,46 +1017,59 @@ class _MemoryTabBar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-              child: Row(
-                children: tabs.asMap().entries.map((e) {
-                  final i = e.key;
-                  final label = e.value;
-                  final active = controller.index == i;
-                  return GestureDetector(
-                    onTap: () => controller.animateTo(i),
-                    behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 15),
-                          Text(
-                            label,
-                            style: GoogleFonts.notoSansSc(
-                              fontSize: 15,
-                              fontWeight:
-                                  active ? FontWeight.w700 : FontWeight.w500,
-                              color: active ? primary : textMuted,
-                            ),
+            // Five labels whose width depends on the language: two glyphs each
+            // in Chinese, whole words in English. Scroll rather than overflow,
+            // while still filling the bar whenever they do fit.
+            LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: ConstrainedBox(
+                  constraints:
+                      BoxConstraints(minWidth: constraints.maxWidth - 40),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: tabs.asMap().entries.map((e) {
+                      final i = e.key;
+                      final label = e.value;
+                      final active = controller.index == i;
+                      return GestureDetector(
+                        onTap: () => controller.animateTo(i),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                              right: i == tabs.length - 1 ? 0 : 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(height: 15),
+                              Text(
+                                label,
+                                style: GoogleFonts.notoSansSc(
+                                  fontSize: 15,
+                                  fontWeight: active
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: active ? primary : textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: active ? 22 : 0,
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  color: primary,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: active ? 22 : 0,
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: primary,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
               ),
             ),
             Divider(height: 1, thickness: 1, color: border),
@@ -1161,7 +1141,7 @@ class _OverviewTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _SectionLabel('描述'),
+                    _SectionLabel(context.l10n.memoryDescriptionLabel),
                     const SizedBox(height: 6),
                     _QuoteBar(text: memory.description!),
                   ],
@@ -1235,6 +1215,7 @@ class _QuickStatsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final hasBudget = budget != null && budget! > 0;
     final compact = hasBudget;
 
@@ -1243,7 +1224,7 @@ class _QuickStatsRow extends StatelessWidget {
         child: _StatCard(
           emoji: '🖼️',
           value: '$photoCount',
-          label: '相册',
+          label: l10n.memoryTabGallery,
           compact: compact,
           onTap: onPhotosTap,
         ),
@@ -1253,7 +1234,7 @@ class _QuickStatsRow extends StatelessWidget {
         child: _StatCard(
           emoji: '🗺️',
           value: '$itineraryCount',
-          label: '行程站',
+          label: l10n.memoryStatStops,
           compact: compact,
           onTap: onItineraryTap,
         ),
@@ -1263,7 +1244,7 @@ class _QuickStatsRow extends StatelessWidget {
         child: _StatCard(
           emoji: '🧾',
           value: _expenseLabel,
-          label: '费用',
+          label: l10n.memoryTabExpenses,
           compact: compact,
           isAmount: true,
           onTap: onExpensesTap,
@@ -1275,7 +1256,7 @@ class _QuickStatsRow extends StatelessWidget {
           child: _StatCard(
             emoji: '👛',
             value: _budgetLabel,
-            label: '预算',
+            label: l10n.memoryStatBudget,
             compact: compact,
             isAmount: true,
             isPrimary: true,
@@ -1522,8 +1503,8 @@ class _LocationsSection extends StatelessWidget {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('无法打开地图'),
+          SnackBar(
+              content: Text(context.l10n.memoryMapOpenFailed),
               behavior: SnackBarBehavior.floating),
         );
       }
@@ -1545,19 +1526,27 @@ class _LocationsSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                '行程地点',
-                style: GoogleFonts.notoSansSc(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
+              Flexible(
+                child: Text(
+                  context.l10n.memoryLocationsTitle,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: textColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '· ${locations.length} 站',
-                style: GoogleFonts.notoSansSc(
-                    fontSize: 12, color: textMuted),
+              Flexible(
+                child: Text(
+                  context.l10n.memoryStopCount(locations.length),
+                  style: GoogleFonts.notoSansSc(
+                      fontSize: 12, color: textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -1679,7 +1668,7 @@ class _LocationCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '第 ${index + 1} 站',
+                    context.l10n.memoryStopNumber(index + 1),
                     style: GoogleFonts.notoSansSc(
                         fontSize: 11.5, color: textMuted),
                   ),
@@ -1731,6 +1720,92 @@ class _AvatarCircle extends ConsumerWidget {
   }
 }
 
+// ── Avatar stack ───────────────────────────────────────────────────────────────
+
+/// Overlapping participant bubbles: up to [maxFaces] faces, then a trailing
+/// "+N" bubble standing in for whoever is left.
+///
+/// The exposed slice of each bubble starts roomy and tightens toward a floor as
+/// the group grows, so a stack of ten still fits the width it is handed. Give it
+/// a bounded width (a [Flexible] in a Row) or it falls back to the roomy slice.
+class _AvatarStack extends StatelessWidget {
+  final List<MemoryParticipant> participants;
+  final double diameter;
+  final Color borderColor;
+  final Color overflowFill;
+  final Color overflowText;
+
+  static const maxFaces = 10;
+
+  const _AvatarStack({
+    required this.participants,
+    required this.diameter,
+    required this.borderColor,
+    required this.overflowFill,
+    required this.overflowText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final faces = participants.take(maxFaces).toList();
+    final extra = participants.length - faces.length;
+    final bubbles = faces.length + (extra > 0 ? 1 : 0);
+    if (bubbles == 0) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final roomy = diameter * 0.65;
+        final tight = diameter * 0.3;
+        var slice = roomy;
+        if (bubbles > 1) {
+          slice = ((constraints.maxWidth - diameter) / (bubbles - 1))
+              .clamp(tight, roomy);
+        }
+
+        return SizedBox(
+          width: diameter + (bubbles - 1) * slice,
+          height: diameter,
+          child: Stack(
+            children: [
+              for (int i = 0; i < faces.length; i++)
+                Positioned(
+                  left: i * slice,
+                  child: _AvatarCircle(
+                    personId: faces[i].personId,
+                    diameter: diameter,
+                    borderColor: borderColor,
+                  ),
+                ),
+              if (extra > 0)
+                Positioned(
+                  left: faces.length * slice,
+                  child: Container(
+                    width: diameter,
+                    height: diameter,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: overflowFill,
+                      border: Border.all(color: borderColor, width: 2),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '+$extra',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: diameter * 0.32,
+                        fontWeight: FontWeight.w800,
+                        color: overflowText,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ── Participant Picker Sheet ───────────────────────────────────────────────────
 
 class _ParticipantPickerSheet extends ConsumerWidget {
@@ -1777,7 +1852,7 @@ class _ParticipantPickerSheet extends ConsumerWidget {
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  Text('参与者',
+                  Text(context.l10n.memoryParticipantsSection,
                       style: Theme.of(context).textTheme.titleMedium),
                   const Spacer(),
                   IconButton(
@@ -1797,7 +1872,7 @@ class _ParticipantPickerSheet extends ConsumerWidget {
                   final self = selfAsync.value;
                   final all = [?self, ...persons];
                   if (all.isEmpty) {
-                    return const Center(child: Text('暂无联系人'));
+                    return Center(child: Text(context.l10n.memoryNoContacts));
                   }
                   return ListView.builder(
                     controller: scrollCtrl,
@@ -1813,7 +1888,7 @@ class _ParticipantPickerSheet extends ConsumerWidget {
                         ),
                         title: Text(person.name),
                         subtitle: person.isSelf
-                            ? const Text('（我）')
+                            ? Text(context.l10n.memoryYouSuffix)
                             : null,
                         trailing: selected
                             ? const Icon(Icons.check_circle,
@@ -1905,7 +1980,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
                       ElevatedButton.icon(
                         onPressed: _addDay,
                         icon: const Icon(Icons.add, size: 18),
-                        label: const Text('添加第一天'),
+                        label: Text(l10n.memoryAddFirstDay),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primary,
                           foregroundColor: Colors.white,
@@ -1957,7 +2032,7 @@ class _ItineraryTabState extends ConsumerState<_ItineraryTab> {
                       Icon(Icons.add, size: 16, color: primary),
                       const SizedBox(width: 6),
                       Text(
-                        '添加新一天',
+                        l10n.memoryAddDay,
                         style: GoogleFonts.notoSansSc(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -2047,16 +2122,16 @@ class _DaySectionState extends ConsumerState<_DaySection> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除站点'),
-        content: const Text('确定要删除这个站点吗？'),
+        title: Text(context.l10n.memoryDeleteStopTitle),
+        content: Text(context.l10n.memoryDeleteStopBody),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+              child: Text(context.l10n.cancel)),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child:
-                  const Text('删除', style: TextStyle(color: Colors.red))),
+              child: Text(context.l10n.delete,
+                  style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -2068,16 +2143,16 @@ class _DaySectionState extends ConsumerState<_DaySection> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除这一天'),
-        content: const Text('删除后，这天的所有站点也会一并删除。'),
+        title: Text(context.l10n.memoryDeleteDayTitle),
+        content: Text(context.l10n.memoryDeleteDayBody),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+              child: Text(context.l10n.cancel)),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child:
-                  const Text('删除', style: TextStyle(color: Colors.red))),
+              child: Text(context.l10n.delete,
+                  style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -2115,9 +2190,10 @@ class _DaySectionState extends ConsumerState<_DaySection> {
     final surface =
         Theme.of(context).extension<AppThemeExtension>()!.surfaceColor;
 
-    final dayLabel = '第${_ordinalChinese(widget.dayNumber)}天';
+    final l10n = context.l10n;
+    final dayLabel = l10n.memoryDayLabel(widget.dayNumber);
     final dateLabel = widget.day.date != null
-        ? ' · ${DateFormat('M月d日').format(widget.day.date!)}'
+        ? ' · ${l10n.formatMonthDay(widget.day.date!)}'
         : '';
 
     final stops = _sortByTime(stopsAsync.value ?? []);
@@ -2130,12 +2206,16 @@ class _DaySectionState extends ConsumerState<_DaySection> {
           // Day header
           Row(
             children: [
-              Text(
-                '$dayLabel$dateLabel',
-                style: GoogleFonts.notoSansSc(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
+              Flexible(
+                child: Text(
+                  '$dayLabel$dateLabel',
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: textColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
@@ -2174,7 +2254,7 @@ class _DaySectionState extends ConsumerState<_DaySection> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(
-                '暂无站点，点击下方添加',
+                context.l10n.memoryNoStops,
                 style: GoogleFonts.notoSansSc(
                     fontSize: 12, color: textMuted),
               ),
@@ -2210,7 +2290,7 @@ class _DaySectionState extends ConsumerState<_DaySection> {
                 Icon(Icons.add_circle_outline, size: 16, color: primary),
                 const SizedBox(width: 4),
                 Text(
-                  '添加站点',
+                  context.l10n.memoryAddStop,
                   style: GoogleFonts.notoSansSc(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -2427,7 +2507,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
     final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('选择地点'),
+        title: Text(context.l10n.memoryPickLocation),
         contentPadding: const EdgeInsets.symmetric(vertical: 8),
         content: SizedBox(
           width: double.maxFinite,
@@ -2437,7 +2517,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
               ListTile(
                 leading:
                     const Text('📝', style: TextStyle(fontSize: 18)),
-                title: const Text('无地点'),
+                title: Text(context.l10n.memoryNoLocation),
                 selected: _selectedLocationId == null,
                 onTap: () => Navigator.pop(ctx, ''),
               ),
@@ -2450,7 +2530,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
                   )),
               ListTile(
                 leading: const Icon(Icons.add),
-                title: const Text('添加新地点'),
+                title: Text(context.l10n.memoryAddLocation),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _promptAddNewLocation();
@@ -2470,19 +2550,20 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (nameCtx) => AlertDialog(
-        title: const Text('添加新地点'),
+        title: Text(context.l10n.memoryAddLocation),
         content: TextField(
           autofocus: true,
-          decoration: const InputDecoration(hintText: '地点名称'),
+          decoration:
+              InputDecoration(hintText: context.l10n.memoryLocationNameHint),
           onChanged: (v) => name = v,
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(nameCtx, false),
-              child: const Text('取消')),
+              child: Text(context.l10n.cancel)),
           TextButton(
               onPressed: () => Navigator.pop(nameCtx, true),
-              child: const Text('添加')),
+              child: Text(context.l10n.add)),
         ],
       ),
     );
@@ -2571,7 +2652,9 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
             Row(
               children: [
                 Text(
-                  isEditing ? '编辑站点' : '添加站点',
+                  isEditing
+                      ? context.l10n.memoryEditStop
+                      : context.l10n.memoryAddStop,
                   style: GoogleFonts.notoSansSc(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -2580,7 +2663,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
                 const Spacer(),
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
-                  child: Text('取消',
+                  child: Text(context.l10n.cancel,
                       style: GoogleFonts.notoSansSc(
                           fontSize: 13, color: primary)),
                 ),
@@ -2606,7 +2689,8 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        selectedLocation?.name ?? '选择地点（可选）',
+                        selectedLocation?.name ??
+                            context.l10n.memoryPickLocationOptional,
                         style: GoogleFonts.notoSansSc(
                           fontSize: 14,
                           color: selectedLocation != null
@@ -2636,7 +2720,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
                 style: GoogleFonts.notoSansSc(
                     fontSize: 14, color: textColor),
                 decoration: InputDecoration.collapsed(
-                  hintText: '活动内容（去哪儿，做什么）',
+                  hintText: context.l10n.memoryStopActivityHint,
                   hintStyle: GoogleFonts.notoSansSc(
                       fontSize: 14, color: textMuted),
                 ),
@@ -2659,7 +2743,7 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
                       child: Center(
                         child: Text(
                           _timeLabel == null
-                              ? '🕘 时间（可选）'
+                              ? '🕘 ${context.l10n.memoryTimeOptional}'
                               : '🕘 $_timeLabel',
                           style: GoogleFonts.notoSansSc(
                             fontSize: 14,
@@ -2717,17 +2801,6 @@ class _StopEditorSheetState extends ConsumerState<_StopEditorSheet> {
   }
 }
 
-// ── Chinese ordinal helper ─────────────────────────────────────────────────────
-
-String _ordinalChinese(int n) {
-  const nums = [
-    '一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
-    '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
-  ];
-  if (n >= 1 && n <= nums.length) return nums[n - 1];
-  return '$n';
-}
-
 // ── Itinerary days section (overview) ─────────────────────────────────────────
 
 class _ItineraryDaysSection extends StatelessWidget {
@@ -2767,21 +2840,28 @@ class _ItineraryDaysSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text(
-                '行程站点',
-                style: GoogleFonts.notoSansSc(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: textColor,
+              Flexible(
+                child: Text(
+                  context.l10n.memoryItineraryStopsTitle,
+                  style: GoogleFonts.notoSansSc(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: textColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                multiDay
-                    ? '· ${days.length} 天 · ${allStops.length} 站'
-                    : '· ${allStops.length} 站',
-                style:
-                    GoogleFonts.notoSansSc(fontSize: 12, color: textMuted),
+              Flexible(
+                child: Text(
+                  context.l10n.memoryDaysAndStops(
+                      multiDay ? days.length : 0, allStops.length),
+                  style:
+                      GoogleFonts.notoSansSc(fontSize: 12, color: textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -2853,7 +2933,7 @@ class _DayStopsRow extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  '第${_ordinalChinese(dayNumber)}天',
+                  context.l10n.memoryDayLabel(dayNumber),
                   style: GoogleFonts.notoSansSc(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -2863,7 +2943,7 @@ class _DayStopsRow extends StatelessWidget {
                 if (day.date != null) ...[
                   const SizedBox(width: 6),
                   Text(
-                    '· ${DateFormat('M月d日').format(day.date!)}',
+                    '· ${context.l10n.formatMonthDay(day.date!)}',
                     style: GoogleFonts.notoSansSc(
                         fontSize: 12, color: textMuted),
                   ),
@@ -3020,7 +3100,7 @@ class _StopCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '第 $stopNumber 站',
+                    context.l10n.memoryStopNumber(stopNumber),
                     style:
                         GoogleFonts.notoSansSc(fontSize: 11.5, color: textMuted),
                   ),
@@ -3509,14 +3589,14 @@ class _VideoPlayerPageState extends State<_VideoPlayerPage> {
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, color: Colors.white54, size: 48),
-            SizedBox(height: 8),
-            Text('无法播放视频',
-                style: TextStyle(color: Colors.white54)),
+            const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+            const SizedBox(height: 8),
+            Text(context.l10n.memoryVideoFailed,
+                style: const TextStyle(color: Colors.white54)),
           ],
         ),
       );
@@ -3891,6 +3971,7 @@ class _SettingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final border = Theme.of(context).extension<AppThemeExtension>()!.borderColor;
     final text = Theme.of(context).extension<AppThemeExtension>()!.textPrimary;
     final textMuted = Theme.of(context).extension<AppThemeExtension>()!.textSecondary;
@@ -3915,7 +3996,7 @@ class _SettingsTab extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 40),
         children: [
           // ── 导出 section ──
-          sectionHeader('导出'),
+          sectionHeader(l10n.memoryExportSection),
           Column(
             children: [
               divider(),
@@ -3931,7 +4012,7 @@ class _SettingsTab extends StatelessWidget {
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
-                            '导出 PDF',
+                            l10n.memoryExportPdfButton,
                             style: GoogleFonts.notoSansSc(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
@@ -3950,7 +4031,7 @@ class _SettingsTab extends StatelessWidget {
           ),
 
           // ── 主题 section ──
-          sectionHeader('主题'),
+          sectionHeader(l10n.memoryThemeSection),
           const ThemePickerGrid(),
 
           // ── 删除 section — visually separate, fixed danger red regardless of theme ──
@@ -3975,7 +4056,7 @@ class _SettingsTab extends StatelessWidget {
                             color: Colors.white, size: 20),
                         const SizedBox(width: 10),
                         Text(
-                          '删除回忆',
+                          l10n.memoryDeleteTitle,
                           style: GoogleFonts.notoSansSc(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -3988,7 +4069,7 @@ class _SettingsTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '此操作无法撤销',
+                  l10n.memoryDeleteIrreversible,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.notoSansSc(
                     fontSize: 12,

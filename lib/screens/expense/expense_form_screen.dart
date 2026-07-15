@@ -494,7 +494,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '管理',
+                      context.l10n.expenseFormManage,
                       style: TextStyle(
                           fontSize: 10, color: t.textSecondary),
                     ),
@@ -568,7 +568,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
               Icon(Icons.photo_album_outlined,
                   size: 18, color: t.textSecondary.withValues(alpha: 0.6)),
               const SizedBox(width: 6),
-              Text('记忆',
+              Text(context.l10n.expenseFormMemory,
                   style: TextStyle(
                       fontSize: 13,
                       color: t.textSecondary.withValues(alpha: 0.7))),
@@ -635,7 +635,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                       color: t.textSecondary.withValues(alpha: 0.7))),
               if (!linked) ...[
                 const SizedBox(width: 8),
-                Text('（关联记忆后可分摊）',
+                Text(l10n.expenseFormLinkMemoryHint,
                     style: TextStyle(
                         fontSize: 11,
                         color: t.textSecondary.withValues(alpha: 0.5))),
@@ -690,7 +690,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-          child: Text('谁请客（承担全额）',
+          child: Text(context.l10n.expenseFormTreatWho,
               style: TextStyle(
                   fontSize: 12,
                   color: t.textSecondary.withValues(alpha: 0.8))),
@@ -714,7 +714,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Text('这笔不参与结算，其他人无需分摊',
+          child: Text(context.l10n.expenseFormPersonalHint,
               style: TextStyle(
                   fontSize: 11,
                   color: t.textSecondary.withValues(alpha: 0.7))),
@@ -725,7 +725,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
 
   Widget _rosterEmptyNote() => Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Text('暂无参与者，请先在记忆中添加同行人',
+        child: Text(context.l10n.expenseFormNoParticipants,
             style: TextStyle(fontSize: 11, color: _t.textSecondary)),
       );
 
@@ -795,7 +795,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
         // Exclude multiselect. Selected = excluded from the split.
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-          child: Text('不参与分摊',
+          child: Text(context.l10n.expenseFormExcluded,
               style: TextStyle(
                   fontSize: 12,
                   color: t.textSecondary.withValues(alpha: 0.8))),
@@ -811,7 +811,9 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
               return FilterChip(
                 avatar: _initialAvatar(p.name),
                 label: Text(
-                  isPayer ? '${p.name}（付款）' : p.name,
+                  isPayer
+                      ? context.l10n.expenseFormPayerSuffix(p.name)
+                      : p.name,
                   style: const TextStyle(fontSize: 11),
                 ),
                 selected: excluded,
@@ -835,7 +837,8 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
           child: Text(
-            '每人 ${formatMoneyWithSymbol(perHead, _currency)} · ${sharers.length} 人分摊',
+            context.l10n.expenseFormPerHead(
+                formatMoneyWithSymbol(perHead, _currency), sharers.length),
             style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

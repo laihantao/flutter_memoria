@@ -77,7 +77,10 @@ class _MemoryExpensesTabState extends ConsumerState<MemoryExpensesTab> {
           children: [
             _SegmentedToggle(
               index: _view,
-              labels: const ['📊 统计', '🧾 明细'],
+              labels: [
+                '📊 ${l10n.memoryExpensesStatsTab}',
+                '🧾 ${l10n.memoryExpensesListTab}',
+              ],
               onChanged: (i) => setState(() => _view = i),
             ),
             Expanded(
@@ -120,7 +123,7 @@ class _MemoryExpensesTabState extends ConsumerState<MemoryExpensesTab> {
           ),
           TextButton(
             onPressed: () => showBudgetSheet(context, ref, widget.memoryId),
-            child: const Text('设置预算'),
+            child: Text(l10n.memoryBudgetSetButton),
           ),
         ],
       ),
@@ -198,8 +201,8 @@ class _SegmentedToggle extends StatelessWidget {
 ///   of each AA, the full amount of a 请客 I hosted, nothing for one I didn't.
 ///   Answers "what did this trip cost me".
 ///
-/// The budget follows the lens, so a budget reads as a team budget or a personal
-/// one depending on which question you're asking.
+/// A budget is one row per (memory, currency) — there is no per-person budget to
+/// show, so the budget card only appears under 全队, measured against team spend.
 class _StatsView extends ConsumerWidget {
   final String memoryId;
   final List<Transaction> txns;
@@ -223,6 +226,7 @@ class _StatsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
     final mine = lens == 1;
     final myShares = ref.watch(memoryMySharesProvider(memoryId)).value;
 
@@ -266,17 +270,20 @@ class _StatsView extends ConsumerWidget {
       children: [
         _SegmentedToggle(
           index: lens,
-          labels: const ['全队', '我的'],
+          labels: [l10n.memoryLensTeam, l10n.memoryLensMine],
           onChanged: onLens,
         ),
         const SizedBox(height: 8),
-        _BudgetCard(
-          memoryId: memoryId,
-          budgets: budgets,
-          spentByCurrency: spentByCurrency,
-          mine: mine,
-        ),
-        const SizedBox(height: 12),
+        // 我的 asks what this trip cost *me*; the budget is a whole-memory
+        // figure, so pairing it with my slice would compare unlike things.
+        if (!mine) ...[
+          _BudgetCard(
+            memoryId: memoryId,
+            budgets: budgets,
+            spentByCurrency: spentByCurrency,
+          ),
+          const SizedBox(height: 12),
+        ],
         if (currencies.isNotEmpty) ...[
           _TotalsCard(
             spentByCurrency: spentByCurrency,
@@ -300,10 +307,11 @@ class _StatsView extends ConsumerWidget {
           ],
         ] else
           _StatCard(
-            title: mine ? '我的消费' : '总消费',
+            title: mine ? l10n.memoryMyExpenses : l10n.memoryTotalExpenses,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(mine ? '这段记忆里没有你承担的消费' : '还没有消费记录',
+              child: Text(
+                  mine ? l10n.memoryNoMyExpenses : l10n.memoryNoExpensesYet,
                   style: GoogleFonts.notoSansSc(
                       fontSize: 13, color: t.textSecondary)),
             ),
@@ -362,29 +370,29 @@ class _StatCard extends StatelessWidget {
 
 // ── Budget card ───────────────────────────────────────────────────────────────
 
+/// Only rendered under the 全队 lens — see [_StatsView].
 class _BudgetCard extends ConsumerWidget {
   final String memoryId;
   final List<MemoryBudget> budgets;
   final Map<String, double> spentByCurrency;
-  final bool mine;
   const _BudgetCard({
     required this.memoryId,
     required this.budgets,
     required this.spentByCurrency,
-    required this.mine,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
 
     return _StatCard(
-      title: mine ? '预算 · 我的' : '预算 · 全队',
+      title: l10n.memoryBudgetTeamTitle,
       action: IconButton(
         visualDensity: VisualDensity.compact,
         icon: Icon(Icons.edit_outlined, size: 18, color: t.textSecondary),
         onPressed: () => showBudgetSheet(context, ref, memoryId),
-        tooltip: '编辑预算',
+        tooltip: l10n.memoryBudgetEditTooltip,
       ),
       child: budgets.isEmpty
           ? InkWell(
@@ -397,7 +405,7 @@ class _BudgetCard extends ConsumerWidget {
                     Icon(Icons.add_circle_outline,
                         size: 18, color: t.accentColor),
                     const SizedBox(width: 8),
-                    Text('设置这段记忆的预算',
+                    Text(l10n.memoryBudgetSetCta,
                         style: GoogleFonts.notoSansSc(
                             fontSize: 13, color: t.accentColor)),
                   ],
@@ -405,6 +413,7 @@ class _BudgetCard extends ConsumerWidget {
               ),
             )
           : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (int i = 0; i < budgets.length; i++) ...[
                   if (i > 0) const SizedBox(height: 12),
@@ -413,6 +422,10 @@ class _BudgetCard extends ConsumerWidget {
                     spent: spentByCurrency[budgets[i].currencyCode] ?? 0,
                   ),
                 ],
+                const SizedBox(height: 8),
+                Text(l10n.memoryBudgetTeamOnlyHint,
+                    style: GoogleFonts.notoSansSc(
+                        fontSize: 11, color: t.textSecondary)),
               ],
             ),
     );
@@ -448,8 +461,10 @@ class _BudgetRow extends StatelessWidget {
             ),
             Text(
               over
-                  ? '超支 ${formatMoneyWithSymbol(-remaining, budget.currencyCode)}'
-                  : '剩 ${formatMoneyWithSymbol(remaining, budget.currencyCode)}',
+                  ? context.l10n.memoryBudgetOver(
+                      formatMoneyWithSymbol(-remaining, budget.currencyCode))
+                  : context.l10n.memoryBudgetLeft(
+                      formatMoneyWithSymbol(remaining, budget.currencyCode)),
               style: GoogleFonts.notoSansSc(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -471,7 +486,8 @@ class _BudgetRow extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          '已花 ${formatMoneyWithSymbol(spent, budget.currencyCode)}',
+          context.l10n.memoryBudgetSpent(
+              formatMoneyWithSymbol(spent, budget.currencyCode)),
           style:
               GoogleFonts.notoSansSc(fontSize: 11, color: t.textSecondary),
         ),
@@ -498,7 +514,9 @@ class _TotalsCard extends StatelessWidget {
     final currencies = spentByCurrency.keys.toList()..sort();
 
     return _StatCard(
-      title: mine ? '我实际承担' : '全队总消费',
+      title: mine
+          ? context.l10n.memoryMyShareTitle
+          : context.l10n.memoryTeamTotalTitle,
       child: Column(
         children: [
           for (int i = 0; i < currencies.length; i++) ...[
@@ -516,7 +534,7 @@ class _TotalsCard extends StatelessWidget {
                       color: t.textPrimary),
                 ),
                 Text(
-                  '${countByCurrency[currencies[i]]} 笔',
+                  context.l10n.memoryTxnCount(countByCurrency[currencies[i]]!),
                   style: GoogleFonts.notoSansSc(
                       fontSize: 12, color: t.textSecondary),
                 ),
@@ -564,7 +582,7 @@ class _CategoryCard extends StatelessWidget {
     final total = byCategory.values.fold(0.0, (a, b) => a + b);
 
     return _StatCard(
-      title: '分类占比',
+      title: context.l10n.memoryCategoryBreakdown,
       action: currencies.length > 1
           ? Wrap(
               spacing: 4,
@@ -601,7 +619,7 @@ class _CategoryCard extends StatelessWidget {
       child: total <= 0
           ? Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('该币种暂无支出',
+              child: Text(context.l10n.memoryNoSpendInCurrency,
                   style: GoogleFonts.notoSansSc(
                       fontSize: 13, color: t.textSecondary)),
             )
@@ -626,7 +644,7 @@ class _CategoryCard extends StatelessWidget {
                       Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('总计',
+                          Text(context.l10n.memoryTotal,
                               style: GoogleFonts.notoSansSc(
                                   fontSize: 11, color: t.textSecondary)),
                           const SizedBox(height: 2),
@@ -755,7 +773,7 @@ class _PersonCostsCard extends ConsumerWidget {
 
     final roster = ref.watch(memoryParticipantPersonsProvider(memoryId));
     final names = {for (final p in roster) p.id: p.name};
-    String label(String id) => names[id] ?? '已移除';
+    String label(String id) => names[id] ?? context.l10n.memoryPersonRemoved;
 
     // Group by currency, preserving the service's (sorted) currency order.
     final byCurrency = <String, List<PersonCostTotals>>{};
@@ -764,7 +782,7 @@ class _PersonCostsCard extends ConsumerWidget {
     }
 
     return _StatCard(
-      title: '各人消费',
+      title: context.l10n.memoryPerPersonTitle,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -826,7 +844,8 @@ class _PersonCostRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                '垫付 ${formatMoneyWithSymbol(totals.paid, c)}',
+                context.l10n
+                    .memoryPaidUpfront(formatMoneyWithSymbol(totals.paid, c)),
                 style: GoogleFonts.notoSansSc(
                     fontSize: 11.5, color: t.textSecondary),
               ),
@@ -1054,6 +1073,7 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
     final enabled = ref.watch(enabledCurrenciesProvider);
     final budgetsAsync = ref.watch(memoryBudgetsProvider(widget.memoryId));
     final budgets = budgetsAsync.value ?? const <MemoryBudget>[];
@@ -1087,13 +1107,13 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('预算',
+            Text(l10n.memoryStatBudget,
                 style: GoogleFonts.notoSansSc(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: t.textPrimary)),
             const SizedBox(height: 4),
-            Text('按币种设置，留空表示不设预算',
+            Text(l10n.memoryBudgetSheetHint,
                 style: GoogleFonts.notoSansSc(
                     fontSize: 12, color: t.textSecondary)),
             const SizedBox(height: 12),
@@ -1142,7 +1162,7 @@ class _BudgetSheetState extends ConsumerState<_BudgetSheet> {
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('保存'),
+                    : Text(l10n.save),
               ),
             ),
           ],

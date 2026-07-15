@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/app_database.dart';
 import '../../l10n/app_localizations.dart';
@@ -72,11 +71,8 @@ class _MemoryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final shortFmt = DateFormat('d MMM');
-    final fullFmt = DateFormat('d MMM yyyy');
-    final dateStr = memory.endDate != null
-        ? '${shortFmt.format(memory.startDate)} – ${fullFmt.format(memory.endDate!)}'
-        : fullFmt.format(memory.startDate);
+    final dateStr =
+        context.l10n.memoryDateRange(memory.startDate, memory.endDate);
 
     final textColor = isDark ? AppColors.darkText : AppColors.text;
     final textMuted = isDark ? AppColors.darkTextMuted : AppColors.textMuted;
