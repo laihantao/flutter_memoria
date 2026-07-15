@@ -172,6 +172,22 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
         .get();
   }
 
+  /// Every split belonging to a memory's transactions, as a stream.
+  ///
+  /// Watching the splits table directly (rather than re-reading it whenever the
+  /// transactions stream fires) is what keeps settlement views off a stale or
+  /// half-written snapshot: a save writes the transaction first and its splits
+  /// after, so a reader woken only by the transaction can beat the splits to the
+  /// DB.
+  Stream<List<TransactionSplit>> watchSplitsByMemory(String memoryId) {
+    final q = select(transactionSplits).join([
+      innerJoin(transactions,
+          transactions.id.equalsExp(transactionSplits.transactionId)),
+    ])
+      ..where(transactions.memoryId.equals(memoryId));
+    return q.map((row) => row.readTable(transactionSplits)).watch();
+  }
+
   Future<void> upsertSplit(TransactionSplitsCompanion companion) =>
       into(transactionSplits).insertOnConflictUpdate(companion);
 

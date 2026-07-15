@@ -43,23 +43,35 @@ final memoryBudgetsProvider =
 /// per-person cost totals, and the dashboard's 我的 lens.
 typedef ResolvedExpense = ({Transaction tx, Map<String, double> shares});
 
+/// Splits for the memory's transactions, kept live off the splits table.
+/// Public so tests can drive [memoryResolvedExpensesProvider] without a DB.
+final memorySplitRowsProvider =
+    StreamProvider.family<List<TransactionSplit>, String>((ref, memoryId) {
+  return ref.watch(databaseProvider).expenseDao.watchSplitsByMemory(memoryId);
+});
+
 /// The memory's expenses with their shares resolved.
 ///
 /// No `splitType` filter is needed: 个人 and 请客 name the payer as their own
 /// sole bearer, so they carry no debt and drop out of the settlement math on
 /// their own (see `buildShares` in utils/split_math.dart). They do still count
 /// toward [memoryPersonCostsProvider], which is the point.
+///
+/// Composed from the two underlying **streams**, so it recomputes whenever a
+/// transaction or a split changes. It must not read the DAO one-shot: the
+/// dashboard mounts this for the whole life of the 费用 tab, and a one-shot read
+/// would freeze it at whatever existed when the tab opened while the (streamed)
+/// totals card carried on updating around it.
 final memoryResolvedExpensesProvider =
     FutureProvider.family<List<ResolvedExpense>, String>((ref, memoryId) async {
-  final db = ref.watch(databaseProvider);
-  final txns = await db.expenseDao.getTransactionsByMemoryId(memoryId);
+  final txns =
+      await ref.watch(transactionsByMemoryProvider(memoryId).future);
+  final splits = await ref.watch(memorySplitRowsProvider(memoryId).future);
 
   final expenses = txns
       .where((t) => t.type == 'expense' && t.payerPersonId != null)
       .toList();
 
-  final splits = await db.expenseDao
-      .getSplitsForTransactions(expenses.map((t) => t.id).toList());
   final splitsByTx = <String, List<TransactionSplit>>{};
   for (final s in splits) {
     (splitsByTx[s.transactionId] ??= <TransactionSplit>[]).add(s);
@@ -109,8 +121,8 @@ final memoryMySharesProvider =
 /// Per-currency settlement (Payment Statement + Final Consolidate) for a memory.
 ///
 /// Runs the pure [ExpenseSplitService] over the memory's expenses and the trip
-/// roster. Feeds the PDF preview and any in-app settlement view. One-shot:
-/// recomputes on read, which is what the export flow needs.
+/// roster. Feeds the PDF preview and any in-app settlement view, and tracks
+/// edits live via [memoryResolvedExpensesProvider].
 final memorySplitResultsProvider =
     FutureProvider.family<List<CurrencySplit>, String>((ref, memoryId) async {
   final inputs = _toSplitTxns(

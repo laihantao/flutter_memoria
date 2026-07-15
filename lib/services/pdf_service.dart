@@ -2,14 +2,76 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../data/app_database.dart';
 import '../services/expense_split_service.dart';
 import '../utils/file_ops.dart';
 import '../utils/money.dart';
 
+/// The CJK font could not be loaded, so a statement would render with every
+/// Chinese label blank. Thrown rather than silently emitting that document.
+class CjkFontUnavailable implements Exception {
+  const CjkFontUnavailable();
+
+  @override
+  String toString() => '无法加载中文字体，请连接网络后重试（首次导出需要下载字体，之后可离线使用）。';
+}
+
 class PdfService {
   static final _dateFmt = DateFormat('dd MMM yyyy');
+
+  static Future<pw.ThemeData>? _cjkTheme;
+
+  /// A theme with an embedded CJK font.
+  ///
+  /// The pdf package's built-in Helvetica carries no CJK glyphs, so every
+  /// Chinese label — the section headers, 已结清, category and person names —
+  /// silently renders blank without this.
+  ///
+  /// [PdfGoogleFonts] downloads the font once and caches it to disk, so the
+  /// first export needs network and every later one does not.
+  ///
+  /// To make it fully offline instead (no code change): drop
+  /// `NotoSansSC-Regular.ttf` and `NotoSansSC-Bold.ttf` into a `google_fonts/`
+  /// directory at the project root and add `- google_fonts/` to the pubspec
+  /// assets — the loader checks the asset bundle before the network. Verified
+  /// working; it costs ~21 MB of app size, which is why it isn't the default.
+  /// The exported PDF stays small either way (the font is subsetted to the
+  /// glyphs actually used — a full statement measured ~25 KB).
+  ///
+  /// Held as a Future (not the resolved value) so concurrent exports share one
+  /// load instead of racing.
+  ///
+  /// Known gap: Noto Sans SC has no emoji glyphs, so an emoji in a memory title
+  /// or category name still renders blank.
+  static Future<pw.ThemeData> _cjk() async {
+    final pending = _cjkTheme ??= _buildCjkTheme();
+    try {
+      return await pending;
+    } catch (_) {
+      // Don't let one offline attempt poison the cache for the whole session.
+      _cjkTheme = null;
+      rethrow;
+    }
+  }
+
+  static Future<pw.ThemeData> _buildCjkTheme() async {
+    final base = await PdfGoogleFonts.notoSansSCRegular();
+    final bold = await PdfGoogleFonts.notoSansSCBold();
+    // printing swallows *any* load failure and hands back Helvetica, which has
+    // no CJK glyphs — the document would come out with every Chinese label
+    // blank and nothing to explain why (the package's own warning sits inside
+    // an assert, so release builds are silent). A real load yields a TtfFont.
+    if (base is! pw.TtfFont || bold is! pw.TtfFont) {
+      throw const CjkFontUnavailable();
+    }
+    return pw.ThemeData.withFont(base: base, bold: bold);
+  }
+
+  /// Drops the cached font theme. For tests.
+  @visibleForTesting
+  static void resetFontCache() => _cjkTheme = null;
 
   /// Keepsake PDF: cover info + itinerary timeline + photo grid.
   /// Returns raw PDF bytes. Throws [UnsupportedError] on web.
@@ -37,6 +99,7 @@ class PdfService {
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        theme: await _cjk(),
         margin: const pw.EdgeInsets.all(40),
         build: (context) {
           return [
@@ -165,6 +228,7 @@ class PdfService {
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        theme: await _cjk(),
         margin: const pw.EdgeInsets.all(40),
         build: (context) {
           final out = <pw.Widget>[

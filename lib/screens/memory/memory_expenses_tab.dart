@@ -854,6 +854,33 @@ class _PersonCostRow extends StatelessWidget {
 
 // ── 明细 list ─────────────────────────────────────────────────────────────────
 
+/// Small 分摊方式 tag on a 明细 row — 个人 / AA / 请客 at a glance, without
+/// opening the expense.
+class _SplitBadge extends StatelessWidget {
+  final String splitType;
+  const _SplitBadge({required this.splitType});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final label = context.l10n.splitTypeName(splitType);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: t.mutedColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.notoSansSc(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: t.textSecondary),
+      ),
+    );
+  }
+}
+
 class _DetailList extends StatelessWidget {
   final String memoryId;
   final List<Transaction> txns;
@@ -920,33 +947,34 @@ class _DetailList extends StatelessWidget {
                             color: t.textPrimary),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        (tx.note ?? '').isNotEmpty
-                            ? '${l10n.formatMonthDay(tx.txnDate)} · ${tx.note}'
-                            : l10n.formatMonthDay(tx.txnDate),
-                        style: GoogleFonts.notoSansSc(
-                            fontSize: 12.5, color: t.textSecondary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          _SplitBadge(splitType: tx.splitType),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              (tx.note ?? '').isNotEmpty
+                                  ? '${l10n.formatMonthDay(tx.txnDate)} · ${tx.note}'
+                                  : l10n.formatMonthDay(tx.txnDate),
+                              style: GoogleFonts.notoSansSc(
+                                  fontSize: 12, color: t.textSecondary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 13, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: t.accentColor.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    // Per-row currency — a trip can mix RM and S$ rows.
-                    '${isExp ? '−' : '+'}${formatMoneyWithSymbol(tx.amount, tx.currencyCode)}',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: t.accentColor),
-                  ),
+                const SizedBox(width: 8),
+                Text(
+                  // Per-row currency — a trip can mix RM and S$ rows.
+                  '${isExp ? '−' : '+'}${formatMoneyWithSymbol(tx.amount, tx.currencyCode)}',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary),
                 ),
               ],
             ),
