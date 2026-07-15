@@ -11,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/currency_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/person_provider.dart';
+import '../../services/expense_split_service.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/money.dart';
 
@@ -49,6 +50,7 @@ class MemoryExpensesTab extends ConsumerStatefulWidget {
 
 class _MemoryExpensesTabState extends ConsumerState<MemoryExpensesTab> {
   int _view = 0; // 0 = 统计, 1 = 明细
+  int _lens = 0; // 0 = 全队, 1 = 我的
   String? _donutCurrency; // null → dominant currency
 
   AppThemeExtension get _t =>
@@ -85,6 +87,8 @@ class _MemoryExpensesTabState extends ConsumerState<MemoryExpensesTab> {
                       txns: txns,
                       budgets: budgets,
                       catMap: catMap,
+                      lens: _lens,
+                      onLens: (i) => setState(() => _lens = i),
                       donutCurrency: _donutCurrency,
                       onDonutCurrency: (c) =>
                           setState(() => _donutCurrency = c),
@@ -186,11 +190,23 @@ class _SegmentedToggle extends StatelessWidget {
 
 // ── 统计 view ─────────────────────────────────────────────────────────────────
 
+/// 统计 dashboard, read through one of two lenses:
+///
+/// - **全队** — every expense at its full amount, whatever the split mode.
+///   Answers "what did this trip cost in total".
+/// - **我的** — only what *I* bear: my 个人 expenses in full, my per-head slice
+///   of each AA, the full amount of a 请客 I hosted, nothing for one I didn't.
+///   Answers "what did this trip cost me".
+///
+/// The budget follows the lens, so a budget reads as a team budget or a personal
+/// one depending on which question you're asking.
 class _StatsView extends ConsumerWidget {
   final String memoryId;
   final List<Transaction> txns;
   final List<MemoryBudget> budgets;
   final Map<String, Category> catMap;
+  final int lens; // 0 = 全队, 1 = 我的
+  final ValueChanged<int> onLens;
   final String? donutCurrency;
   final ValueChanged<String> onDonutCurrency;
   const _StatsView({
@@ -198,6 +214,8 @@ class _StatsView extends ConsumerWidget {
     required this.txns,
     required this.budgets,
     required this.catMap,
+    required this.lens,
+    required this.onLens,
     required this.donutCurrency,
     required this.onDonutCurrency,
   });
@@ -205,14 +223,27 @@ class _StatsView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final mine = lens == 1;
+    final myShares = ref.watch(memoryMySharesProvider(memoryId)).value;
+
+    if (mine && myShares == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    /// What this row contributes under the current lens.
+    double weight(Transaction tx) =>
+        mine ? (myShares![tx.id] ?? 0) : tx.amount;
 
     // Per-currency expense totals (income excluded — legacy rows only).
     final spentByCurrency = <String, double>{};
     final countByCurrency = <String, int>{};
     for (final tx in txns) {
       if (tx.type != 'expense') continue;
+      final w = weight(tx);
+      // Under 我的, a row I bear none of isn't mine to count at all.
+      if (mine && w == 0) continue;
       spentByCurrency[tx.currencyCode] =
-          (spentByCurrency[tx.currencyCode] ?? 0) + tx.amount;
+          (spentByCurrency[tx.currencyCode] ?? 0) + w;
       countByCurrency[tx.currencyCode] =
           (countByCurrency[tx.currencyCode] ?? 0) + 1;
     }
@@ -233,16 +264,24 @@ class _StatsView extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
       children: [
+        _SegmentedToggle(
+          index: lens,
+          labels: const ['全队', '我的'],
+          onChanged: onLens,
+        ),
+        const SizedBox(height: 8),
         _BudgetCard(
           memoryId: memoryId,
           budgets: budgets,
           spentByCurrency: spentByCurrency,
+          mine: mine,
         ),
         const SizedBox(height: 12),
         if (currencies.isNotEmpty) ...[
           _TotalsCard(
             spentByCurrency: spentByCurrency,
             countByCurrency: countByCurrency,
+            mine: mine,
           ),
           const SizedBox(height: 12),
           if (donutCcy != null)
@@ -252,15 +291,19 @@ class _StatsView extends ConsumerWidget {
               currencies: currencies,
               currency: donutCcy,
               onCurrency: onDonutCurrency,
+              weight: weight,
             ),
-          const SizedBox(height: 12),
-          _PayerCard(memoryId: memoryId, txns: txns),
+          // 收支 is a whole-team question — it has no meaning under 我的.
+          if (!mine) ...[
+            const SizedBox(height: 12),
+            _PersonCostsCard(memoryId: memoryId),
+          ],
         ] else
           _StatCard(
-            title: '总消费',
+            title: mine ? '我的消费' : '总消费',
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('还没有消费记录',
+              child: Text(mine ? '这段记忆里没有你承担的消费' : '还没有消费记录',
                   style: GoogleFonts.notoSansSc(
                       fontSize: 13, color: t.textSecondary)),
             ),
@@ -323,10 +366,12 @@ class _BudgetCard extends ConsumerWidget {
   final String memoryId;
   final List<MemoryBudget> budgets;
   final Map<String, double> spentByCurrency;
+  final bool mine;
   const _BudgetCard({
     required this.memoryId,
     required this.budgets,
     required this.spentByCurrency,
+    required this.mine,
   });
 
   @override
@@ -334,7 +379,7 @@ class _BudgetCard extends ConsumerWidget {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
 
     return _StatCard(
-      title: '预算',
+      title: mine ? '预算 · 我的' : '预算 · 全队',
       action: IconButton(
         visualDensity: VisualDensity.compact,
         icon: Icon(Icons.edit_outlined, size: 18, color: t.textSecondary),
@@ -440,8 +485,12 @@ class _BudgetRow extends StatelessWidget {
 class _TotalsCard extends StatelessWidget {
   final Map<String, double> spentByCurrency;
   final Map<String, int> countByCurrency;
-  const _TotalsCard(
-      {required this.spentByCurrency, required this.countByCurrency});
+  final bool mine;
+  const _TotalsCard({
+    required this.spentByCurrency,
+    required this.countByCurrency,
+    required this.mine,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +498,7 @@ class _TotalsCard extends StatelessWidget {
     final currencies = spentByCurrency.keys.toList()..sort();
 
     return _StatCard(
-      title: '总消费',
+      title: mine ? '我实际承担' : '全队总消费',
       child: Column(
         children: [
           for (int i = 0; i < currencies.length; i++) ...[
@@ -488,12 +537,15 @@ class _CategoryCard extends StatelessWidget {
   final List<String> currencies;
   final String currency;
   final ValueChanged<String> onCurrency;
+  /// What each row contributes under the active lens (full amount, or my share).
+  final double Function(Transaction) weight;
   const _CategoryCard({
     required this.txns,
     required this.catMap,
     required this.currencies,
     required this.currency,
     required this.onCurrency,
+    required this.weight,
   });
 
   @override
@@ -503,7 +555,9 @@ class _CategoryCard extends StatelessWidget {
     final byCategory = <String, double>{};
     for (final tx in txns) {
       if (tx.type != 'expense' || tx.currencyCode != currency) continue;
-      byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
+      final w = weight(tx);
+      if (w == 0) continue;
+      byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + w;
     }
     final sorted = byCategory.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -675,80 +729,125 @@ class _DonutPainter extends CustomPainter {
       old.values != values || old.holeColor != holeColor;
 }
 
-// ── Payer card ────────────────────────────────────────────────────────────────
+// ── 各人收支 card ─────────────────────────────────────────────────────────────
 
-class _PayerCard extends ConsumerWidget {
+/// Who fronted what vs who actually bore what, per currency.
+///
+/// 差额 = 付款 − 承担, which is exactly that person's net settlement position:
+/// positive means the others owe them. 个人 and 请客 move 付款 and 承担 by the
+/// same amount, so they show up in the detail without disturbing 差额.
+class _PersonCostsCard extends ConsumerWidget {
   final String memoryId;
-  final List<Transaction> txns;
-  const _PayerCard({required this.memoryId, required this.txns});
+  const _PersonCostsCard({required this.memoryId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    // This dashboard is the user's own — nothing to withhold, unlike the
+    // shared PDF, so 个人 rows count toward 付款/承担 here.
+    final rows = ref
+        .watch(memoryPersonCostsProvider(
+            (memoryId: memoryId, includePersonal: true)))
+        .value;
+    if (rows == null || rows.isEmpty) return const SizedBox.shrink();
+
     final roster = ref.watch(memoryParticipantPersonsProvider(memoryId));
     final names = {for (final p in roster) p.id: p.name};
+    String label(String id) => names[id] ?? '已移除';
 
-    // payerId → currency → paid
-    final paid = <String?, Map<String, double>>{};
-    for (final tx in txns) {
-      if (tx.type != 'expense') continue;
-      final inner = paid.putIfAbsent(tx.payerPersonId, () => {});
-      inner[tx.currencyCode] = (inner[tx.currencyCode] ?? 0) + tx.amount;
+    // Group by currency, preserving the service's (sorted) currency order.
+    final byCurrency = <String, List<PersonCostTotals>>{};
+    for (final r in rows) {
+      (byCurrency[r.currencyCode] ??= []).add(r);
     }
-    // Only interesting once several people have paid.
-    if (paid.length < 2) return const SizedBox.shrink();
-
-    String label(String? id) => id == null ? '未指定' : (names[id] ?? '已移除');
-    String amounts(Map<String, double> m) {
-      final codes = m.keys.toList()..sort();
-      return codes
-          .map((c) => formatMoneyWithSymbol(m[c]!, c))
-          .join(' · ');
-    }
-
-    final entries = paid.entries.toList()
-      ..sort((a, b) => b.value.values
-          .fold(0.0, (x, y) => x + y)
-          .compareTo(a.value.values.fold(0.0, (x, y) => x + y)));
 
     return _StatCard(
-      title: '谁付了多少',
+      title: '各人收支',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (int i = 0; i < entries.length; i++) ...[
-            if (i > 0) Divider(height: 14, color: t.borderColor),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 13,
-                  backgroundColor: t.mutedColor,
-                  child: Text(
-                    label(entries[i].key).characters.first.toUpperCase(),
-                    style: TextStyle(fontSize: 11, color: t.textSecondary),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label(entries[i].key),
-                    style: GoogleFonts.notoSansSc(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: t.textPrimary),
-                  ),
-                ),
-                Text(
-                  amounts(entries[i].value),
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: t.textPrimary),
-                ),
-              ],
-            ),
+          for (final entry in byCurrency.entries) ...[
+            if (byCurrency.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 4),
+                child: Text(entry.key,
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: t.textSecondary)),
+              ),
+            for (int i = 0; i < entry.value.length; i++) ...[
+              if (i > 0) Divider(height: 14, color: t.borderColor),
+              _PersonCostRow(
+                name: label(entry.value[i].personId),
+                totals: entry.value[i],
+              ),
+            ],
           ],
         ],
       ),
+    );
+  }
+}
+
+class _PersonCostRow extends StatelessWidget {
+  final String name;
+  final PersonCostTotals totals;
+  const _PersonCostRow({required this.name, required this.totals});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final c = totals.currencyCode;
+    final net = totals.net;
+    final settled = net == 0;
+
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 13,
+          backgroundColor: t.mutedColor,
+          child: Text(
+            name.characters.first.toUpperCase(),
+            style: TextStyle(fontSize: 11, color: t.textSecondary),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: t.textPrimary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '付 ${formatMoneyWithSymbol(totals.paid, c)} · '
+                '担 ${formatMoneyWithSymbol(totals.borne, c)}',
+                style: GoogleFonts.notoSansSc(
+                    fontSize: 11.5, color: t.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          settled
+              ? '已结清'
+              : '${net > 0 ? '应收' : '应付'} '
+                  '${formatMoneyWithSymbol(net.abs(), c)}',
+          style: GoogleFonts.notoSansSc(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: settled
+                ? t.textSecondary
+                : (net > 0 ? Colors.green.shade600 : Colors.red.shade400),
+          ),
+        ),
+      ],
     );
   }
 }

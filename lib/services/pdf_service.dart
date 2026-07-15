@@ -117,12 +117,18 @@ class PdfService {
 
   /// Expense report PDF (Req G). Emits only the sections whose flag is on,
   /// each grouped **per currency** (Req F). Section order: Expenses table →
-  /// Payment Statement → Final Consolidate.
+  /// 各人收支 → Payment Statement → Final Consolidate.
   ///
   /// [transactions] are the memory's expenses via the `memoryId` FK path (only
-  /// `type == 'expense'` rows are shown). [splits] is the pre-computed
-  /// per-currency settlement from [ExpenseSplitService]. All money is rounded
-  /// half-up via the shared [money] helpers.
+  /// `type == 'expense'` rows are shown). [splits] and [personCosts] are
+  /// pre-computed by [ExpenseSplitService]. All money is rounded half-up via the
+  /// shared [money] helpers.
+  ///
+  /// [includePersonal] governs 个人 rows only. This document is what you hand a
+  /// travel companion to settle up, and your own 个人 purchases are neither
+  /// theirs to reimburse nor theirs to read — hence off by default. They never
+  /// affect settlement either way (a 个人 expense is borne by its own payer), so
+  /// dropping them changes the 明细 and 各人收支 detail but not who owes whom.
   ///
   /// Reads no files, so it is safe on web (unlike [generateKeepsake]).
   static Future<Uint8List> generateExpenseReport({
@@ -131,12 +137,18 @@ class PdfService {
     required Map<String, String> personNames,
     required Map<String, String> categoryNames,
     required List<CurrencySplit> splits,
+    List<PersonCostTotals> personCosts = const [],
     bool includeExpensesTable = true,
+    bool includePersonCosts = true,
     bool includeStatement = false,
     bool includeConsolidate = true,
+    bool includePersonal = false,
   }) async {
-    final expenseTxns =
-        transactions.where((t) => t.type == 'expense').toList();
+    final expenseTxns = transactions
+        .where((t) =>
+            t.type == 'expense' &&
+            (includePersonal || t.splitType != 'personal'))
+        .toList();
     final splitByCurrency = {for (final s in splits) s.currencyCode: s};
 
     // Every currency that appears in either the expenses or the settlement.
@@ -186,9 +198,30 @@ class PdfService {
               out.add(pw.SizedBox(height: 12));
             }
             if (!any) out.add(_emptyNote('暂无支出'));
+            if (!includePersonal) {
+              out.add(_emptyNote('* 个人消费未列入本报告'));
+            }
           }
 
-          // ── 2. Payment Statement (Req G #2, default OFF) ──────────────────
+          // ── 2. 各人收支 — the bridge between the table and the settlement ──
+          // Makes 个人/请客 visible: they move 付款 and 承担 together, so they
+          // show up here without ever moving 差额.
+          if (includePersonCosts) {
+            out.add(pw.Header(level: 1, text: '各人收支 · Paid vs Borne'));
+            var any = false;
+            for (final c in currencies) {
+              final rows =
+                  personCosts.where((r) => r.currencyCode == c).toList();
+              if (rows.isEmpty) continue;
+              any = true;
+              out.add(_currencySubheader(c));
+              out.add(_personCostsTable(rows, nameOf, c));
+              out.add(pw.SizedBox(height: 12));
+            }
+            if (!any) out.add(_emptyNote('暂无支出'));
+          }
+
+          // ── 3. Payment Statement (Req G #2, default OFF) ──────────────────
           if (includeStatement) {
             out.add(pw.Header(level: 1, text: '付款表 · Payment Statement'));
             var any = false;
@@ -203,7 +236,7 @@ class PdfService {
             if (!any) out.add(_emptyNote('暂无可分摊的 AA 支出'));
           }
 
-          // ── 3. Final Consolidate (Req G #3, default ON) ───────────────────
+          // ── 4. Final Consolidate (Req G #3, default ON) ───────────────────
           if (includeConsolidate) {
             out.add(pw.Header(level: 1, text: '最终结算 · Final Consolidate'));
             var any = false;
@@ -254,30 +287,66 @@ class PdfService {
             style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600)),
       );
 
+  /// 各人收支: 付款 / 承担 / 差额 per person. 差额 = 付款 − 承担 is the person's
+  /// net settlement position, so this table reconciles against Final
+  /// Consolidate — a reader can check one against the other.
+  static pw.Widget _personCostsTable(
+    List<PersonCostTotals> rows,
+    String Function(String?) nameOf,
+    String currency,
+  ) {
+    return pw.TableHelper.fromTextArray(
+      headers: ['参与者', '付款', '承担', '差额'],
+      data: rows.map((r) {
+        final net = r.net;
+        return [
+          nameOf(r.personId),
+          formatMoneyWithSymbol(r.paid, currency),
+          formatMoneyWithSymbol(r.borne, currency),
+          net == 0
+              ? '已结清'
+              : '${net > 0 ? '应收' : '应付'} '
+                  '${formatMoneyWithSymbol(net.abs(), currency)}',
+        ];
+      }).toList(),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.brown100),
+      cellStyle: const pw.TextStyle(fontSize: 10),
+      cellAlignments: {
+        0: pw.Alignment.centerLeft,
+        1: pw.Alignment.centerRight,
+        2: pw.Alignment.centerRight,
+        3: pw.Alignment.centerRight,
+      },
+    );
+  }
+
   static pw.Widget _expensesTable(
     List<Transaction> rows,
     Map<String, String> categoryNames,
     Map<String, String> personNames,
     String currency,
   ) {
-    const modeLabel = {
-      'personal': '个人',
-      'split_aa': 'AA',
-      'treat': '请客',
-    };
+    /// Who ends up carrying the row — the answer 方式 alone doesn't give.
+    String bearer(Transaction t) => switch (t.splitType) {
+          'split_aa' => 'AA 分摊',
+          'treat' => '${personNames[t.payerPersonId] ?? ''} 请客',
+          _ => '本人',
+        };
+
     final total = rows.fold<double>(0, (sum, t) => sum + t.amount);
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
         pw.TableHelper.fromTextArray(
-          headers: ['日期', '类别', '金额', '付款人', '方式'],
+          headers: ['日期', '类别', '金额', '付款人', '承担'],
           data: rows
               .map((t) => [
                     _dateFmt.format(t.txnDate),
                     categoryNames[t.categoryId] ?? '',
                     formatMoneyWithSymbol(t.amount, currency),
                     personNames[t.payerPersonId] ?? '',
-                    modeLabel[t.splitType] ?? t.splitType,
+                    bearer(t),
                   ])
               .toList(),
           headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),

@@ -1,6 +1,12 @@
 import '../utils/money.dart';
 
-/// Phase 2 settlement math for AA (`split_aa`) expenses.
+/// Settlement math over memory expenses.
+///
+/// Takes every expense in the unified `(payer, shares)` shape — see
+/// `buildShares` in utils/split_math.dart — with no split-mode branch: 个人 and
+/// 请客 name the payer as their own sole bearer, so they produce no debt here
+/// and fall out of the statement naturally. They still count toward
+/// [ExpenseSplitService.personCosts], which is what makes them visible.
 ///
 /// Pure and DB-free so the PDF builder, any in-app statement view, and unit
 /// tests all share one implementation. See `docs/expenses-split-enhancement-spec.md`.
@@ -20,13 +26,18 @@ import '../utils/money.dart';
 /// 95") contradicts this formula — by the formula, {A owes Me 25, Me owes A
 /// 120} nets to **"Me pays A 95"**. The formula is authoritative here.
 
-/// One AA expense reduced to what the settlement math needs.
+/// One expense reduced to what the settlement math needs.
 class SplitTxn {
   /// Currency code, expected already normalized (upper-case) by the caller.
   final String currencyCode;
 
   /// The person who fronted the money.
   final String payerPersonId;
+
+  /// The expense's full amount. Carried separately from [shares] because
+  /// per-head shares are rounded to 2dp and can sum to a cent off — what the
+  /// payer actually handed over is this, exactly.
+  final double amount;
 
   /// Per-person share for THIS expense (`sharerId` → amount). The payer may
   /// appear here (they share too); a person only *owes* their share on
@@ -36,6 +47,7 @@ class SplitTxn {
   const SplitTxn({
     required this.currencyCode,
     required this.payerPersonId,
+    required this.amount,
     required this.shares,
   });
 }
@@ -43,8 +55,8 @@ class SplitTxn {
 /// The row-owes-column matrix for one currency (Req D).
 ///
 /// Rows are all trip participants; columns ([payeePersonIds]) are the people
-/// who fronted at least one `split_aa` expense in this currency. `cell[r][p]` is
-/// the total person `r` owes person `p`. The diagonal (`r == p`) is always 0.
+/// someone actually owes in this currency. `cell[r][p]` is the total person `r`
+/// owes person `p`. The diagonal (`r == p`) is always 0.
 class PaymentStatement {
   final String currencyCode;
   final List<String> rowPersonIds;
@@ -103,8 +115,78 @@ class CurrencySplit {
   });
 }
 
+/// What one person fronted vs actually bore, in one currency.
+///
+/// [paid] counts every expense they were the payer of, at full amount — 个人,
+/// AA and 请客 alike. [borne] sums their shares: their own 个人 expenses in
+/// full, their per-head slice of each AA expense, the full amount of any 请客
+/// they hosted, and nothing for a 请客 someone else hosted.
+class PersonCostTotals {
+  final String personId;
+  final String currencyCode;
+  final double paid;
+  final double borne;
+
+  const PersonCostTotals({
+    required this.personId,
+    required this.currencyCode,
+    required this.paid,
+    required this.borne,
+  });
+
+  /// paid − borne. Positive → others owe them this much; negative → they owe.
+  /// Equals their net position across the consolidated debts.
+  double get net => roundHalfUp(paid - borne);
+}
+
 class ExpenseSplitService {
   const ExpenseSplitService();
+
+  /// Per-person `paid` / `borne` totals, one row per (person, currency).
+  ///
+  /// Rows follow [participantIds] order, then any off-roster person seen in the
+  /// data; currencies are sorted. A person with no activity in a currency gets
+  /// no row for it.
+  List<PersonCostTotals> personCosts({
+    required List<SplitTxn> transactions,
+    required List<String> participantIds,
+  }) {
+    // currency → personId → (paid, borne)
+    final paid = <String, Map<String, double>>{};
+    final borne = <String, Map<String, double>>{};
+    final seen = <String>{};
+
+    for (final t in transactions) {
+      seen.add(t.payerPersonId);
+      final paidC = paid[t.currencyCode] ??= <String, double>{};
+      paidC[t.payerPersonId] = (paidC[t.payerPersonId] ?? 0) + t.amount;
+
+      final borneC = borne[t.currencyCode] ??= <String, double>{};
+      t.shares.forEach((sharer, share) {
+        seen.add(sharer);
+        borneC[sharer] = (borneC[sharer] ?? 0) + share;
+      });
+    }
+
+    final people = <String>[
+      ...participantIds,
+      for (final id in seen)
+        if (!participantIds.contains(id)) id,
+    ];
+    final currencies = {...paid.keys, ...borne.keys}.toList()..sort();
+
+    return [
+      for (final c in currencies)
+        for (final id in people)
+          if ((paid[c]?[id] ?? 0) != 0 || (borne[c]?[id] ?? 0) != 0)
+            PersonCostTotals(
+              personId: id,
+              currencyCode: c,
+              paid: roundHalfUp(paid[c]?[id] ?? 0),
+              borne: roundHalfUp(borne[c]?[id] ?? 0),
+            ),
+    ];
+  }
 
   /// Groups [transactions] by currency and computes a [CurrencySplit] for each.
   ///
@@ -142,12 +224,16 @@ class ExpenseSplitService {
 
     for (final t in txns) {
       seen.add(t.payerPersonId);
-      if (!payeeOrder.contains(t.payerPersonId)) payeeOrder.add(t.payerPersonId);
       t.shares.forEach((sharer, share) {
         seen.add(sharer);
         if (sharer == t.payerPersonId) return; // no self-debt
         final row = owe[sharer] ??= <String, double>{};
         row[t.payerPersonId] = (row[t.payerPersonId] ?? 0) + share;
+        // Column only once someone actually owes them — a 个人/请客 payer is
+        // their own sole bearer and would otherwise add an all-zero column.
+        if (!payeeOrder.contains(t.payerPersonId)) {
+          payeeOrder.add(t.payerPersonId);
+        }
       });
     }
 

@@ -44,7 +44,11 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
   DateTime _date = DateTime.now();
   String? _memoryId;
   String _splitType = 'personal';
+  // Who fronted the money. For 个人 this is always _selfId (enforced on mode
+  // switch and again on save); for AA/请客 the user picks it.
   String? _payerPersonId;
+  // "Me" in 人脉 — the forced payer for 个人, and the default elsewhere.
+  String? _selfId;
   // People EXCLUDED from an AA split (default: nobody excluded → everyone shares).
   final Set<String> _excludedIds = {};
   // When editing a saved AA expense, we reconstruct the exclude set from the
@@ -77,7 +81,10 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _initSelf() async {
     final self = await ref.read(databaseProvider).personDao.getSelfPerson();
     if (self != null && mounted) {
-      setState(() => _payerPersonId = self.id);
+      setState(() {
+        _selfId = self.id;
+        _payerPersonId = self.id;
+      });
     }
     if (widget.transactionId != null) await _loadExisting();
     if (mounted) setState(() => _loading = false);
@@ -217,23 +224,28 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
 
       // Split modes are only valid on a memory-linked expense; otherwise 个人.
       final effectiveSplit = _memoryId == null ? 'personal' : _splitType;
+      // 个人 is always borne by me, whatever a previous mode left in state.
+      final payerId =
+          effectiveSplit == 'personal' ? _selfId : _payerPersonId;
 
       var splits =
           const <({String personId, String shareType, double shareAmount})>[];
-      if (effectiveSplit == 'split_aa' && _memoryId != null) {
+      if (_memoryId != null) {
         final rosterIds = ref
             .read(memoryParticipantPersonsProvider(_memoryId!))
             .map((p) => p.id)
             .toList();
-        final sharers = computeSharerIds(
+        final shares = buildShares(
+          splitType: effectiveSplit,
+          amount: amount,
+          payerId: payerId,
           rosterIds: rosterIds,
           excludedIds: _excludedIds,
-          payerId: _payerPersonId,
         );
-        final perHead = perHeadShare(amount, sharers.length);
+        final shareType = shareTypeFor(effectiveSplit);
         splits = [
-          for (final pid in sharers)
-            (personId: pid, shareType: 'equal', shareAmount: perHead),
+          for (final e in shares.entries)
+            (personId: e.key, shareType: shareType, shareAmount: e.value),
         ];
       }
 
@@ -247,7 +259,7 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
             txnDate: _date,
             note: note.isEmpty ? null : note,
             splitType: effectiveSplit,
-            payerPersonId: _payerPersonId,
+            payerPersonId: payerId,
             splits: splits,
           );
       if (mounted) {
@@ -646,6 +658,9 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                     ? (_) => setState(() {
                           _splitType = s;
                           if (s != 'split_aa') _excludedIds.clear();
+                          // 个人 is borne by me — don't carry over a payer the
+                          // user picked for AA/请客.
+                          if (s == 'personal') _payerPersonId = _selfId;
                         })
                     : null,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -655,9 +670,76 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
           ),
         ),
         if (linked && _splitType == 'split_aa') _buildAaControls(l10n),
+        if (linked && _splitType == 'treat') _buildTreatControls(),
         const SizedBox(height: 8),
       ],
     );
+  }
+
+  /// 请客: pick the one person who treats. They front the money AND bear all of
+  /// it, so the expense settles to zero — nobody owes the treater anything.
+  Widget _buildTreatControls() {
+    final t = _t;
+    final roster = ref.watch(memoryParticipantPersonsProvider(_memoryId!));
+    if (roster.isEmpty) return _rosterEmptyNote();
+
+    final treaterId = _normalizedPayerId(roster);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Text('谁请客（承担全额）',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: t.textSecondary.withValues(alpha: 0.8))),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: roster.map((p) {
+              return ChoiceChip(
+                avatar: _initialAvatar(p.name),
+                label: Text(p.name, style: const TextStyle(fontSize: 11)),
+                selected: treaterId == p.id,
+                onSelected: (_) => setState(() => _payerPersonId = p.id),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                visualDensity: VisualDensity.compact,
+              );
+            }).toList(),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Text('这笔不参与结算，其他人无需分摊',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: t.textSecondary.withValues(alpha: 0.7))),
+        ),
+      ],
+    );
+  }
+
+  Widget _rosterEmptyNote() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text('暂无参与者，请先在记忆中添加同行人',
+            style: TextStyle(fontSize: 11, color: _t.textSecondary)),
+      );
+
+  /// Keeps the payer valid against the trip roster, falling back to the first
+  /// member. Writes the fallback back to state (without setState — we're inside
+  /// build and the returned value is what we render) so an untouched picker
+  /// saves the person it actually displayed as selected.
+  String _normalizedPayerId(List<Person> roster) {
+    final ids = roster.map((p) => p.id).toList();
+    final id = (_payerPersonId != null && ids.contains(_payerPersonId))
+        ? _payerPersonId!
+        : ids.first;
+    _payerPersonId = id;
+    return id;
   }
 
   // Payer picker + exclude multiselect + live per-head preview, sourced from
@@ -665,21 +747,10 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
   Widget _buildAaControls(AppLocalizations l10n) {
     final t = _t;
     final roster = ref.watch(memoryParticipantPersonsProvider(_memoryId!));
-    if (roster.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Text('暂无参与者，请先在记忆中添加同行人',
-            style: TextStyle(fontSize: 11, color: t.textSecondary)),
-      );
-    }
+    if (roster.isEmpty) return _rosterEmptyNote();
 
     final rosterIds = roster.map((p) => p.id).toList();
-    // Keep the payer valid: fall back to the first roster member if the current
-    // payer isn't part of this trip.
-    final payerId = (_payerPersonId != null &&
-            rosterIds.contains(_payerPersonId))
-        ? _payerPersonId!
-        : rosterIds.first;
+    final payerId = _normalizedPayerId(roster);
 
     final sharers = computeSharerIds(
       rosterIds: rosterIds,

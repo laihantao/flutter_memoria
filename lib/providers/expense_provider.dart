@@ -38,51 +38,119 @@ final memoryBudgetsProvider =
   return ref.watch(databaseProvider).expenseDao.watchBudgets(memoryId);
 });
 
-/// Per-currency settlement (Payment Statement + Final Consolidate) for a memory.
+/// One memory expense paired with who bears it — the `(payer, shares)` shape all
+/// three split modes reduce to. The single source for settlement, the
+/// per-person cost totals, and the dashboard's 我的 lens.
+typedef ResolvedExpense = ({Transaction tx, Map<String, double> shares});
+
+/// The memory's expenses with their shares resolved.
 ///
-/// Composes the memory's `split_aa` expenses, their persisted splits, and the
-/// trip roster, then runs the pure [ExpenseSplitService]. Feeds the (Phase 3)
-/// PDF preview and any in-app settlement view. One-shot: recomputes on read,
-/// which is what the export flow needs.
-final memorySplitResultsProvider =
-    FutureProvider.family<List<CurrencySplit>, String>((ref, memoryId) async {
+/// No `splitType` filter is needed: 个人 and 请客 name the payer as their own
+/// sole bearer, so they carry no debt and drop out of the settlement math on
+/// their own (see `buildShares` in utils/split_math.dart). They do still count
+/// toward [memoryPersonCostsProvider], which is the point.
+final memoryResolvedExpensesProvider =
+    FutureProvider.family<List<ResolvedExpense>, String>((ref, memoryId) async {
   final db = ref.watch(databaseProvider);
   final txns = await db.expenseDao.getTransactionsByMemoryId(memoryId);
 
-  // Only AA expenses with a payer contribute to settlement.
-  final aa = txns
-      .where((t) =>
-          t.type == 'expense' &&
-          t.splitType == 'split_aa' &&
-          t.payerPersonId != null)
+  final expenses = txns
+      .where((t) => t.type == 'expense' && t.payerPersonId != null)
       .toList();
 
-  final splits =
-      await db.expenseDao.getSplitsForTransactions(aa.map((t) => t.id).toList());
+  final splits = await db.expenseDao
+      .getSplitsForTransactions(expenses.map((t) => t.id).toList());
   final splitsByTx = <String, List<TransactionSplit>>{};
   for (final s in splits) {
     (splitsByTx[s.transactionId] ??= <TransactionSplit>[]).add(s);
   }
 
+  return [
+    for (final t in expenses)
+      (
+        tx: t,
+        shares: (splitsByTx[t.id] ?? const []).isEmpty
+            // Rows saved before shares were materialized for every mode carry no
+            // splits — for 个人/请客 the payer bore the lot, which is exactly
+            // this. It's also the safe degenerate for an AA row whose splits are
+            // missing: payer bears all → no debt, as that row behaved before.
+            ? {t.payerPersonId!: t.amount}
+            : {
+                for (final s in splitsByTx[t.id]!) s.personId: s.shareAmount,
+              },
+      ),
+  ];
+});
+
+List<SplitTxn> _toSplitTxns(List<ResolvedExpense> resolved) => [
+      for (final r in resolved)
+        SplitTxn(
+          currencyCode: normalizeCurrency(r.tx.currencyCode),
+          payerPersonId: r.tx.payerPersonId!,
+          amount: r.tx.amount,
+          shares: r.shares,
+        ),
+    ];
+
+/// txId → what "Me" bears of that expense. A missing key means Me bears none of
+/// it (someone else's 请客, or an AA Me was excluded from). Powers the 我的 lens.
+final memoryMySharesProvider =
+    FutureProvider.family<Map<String, double>, String>((ref, memoryId) async {
+  final me = ref.watch(mePersonProvider).value;
+  if (me == null) return const {};
+  final resolved =
+      await ref.watch(memoryResolvedExpensesProvider(memoryId).future);
+  return {
+    for (final r in resolved)
+      if (r.shares[me.id] != null) r.tx.id: r.shares[me.id]!,
+  };
+});
+
+/// Per-currency settlement (Payment Statement + Final Consolidate) for a memory.
+///
+/// Runs the pure [ExpenseSplitService] over the memory's expenses and the trip
+/// roster. Feeds the PDF preview and any in-app settlement view. One-shot:
+/// recomputes on read, which is what the export flow needs.
+final memorySplitResultsProvider =
+    FutureProvider.family<List<CurrencySplit>, String>((ref, memoryId) async {
+  final inputs = _toSplitTxns(
+      await ref.watch(memoryResolvedExpensesProvider(memoryId).future));
   final rosterIds = ref
       .watch(memoryParticipantPersonsProvider(memoryId))
       .map((p) => p.id)
       .toList();
 
-  final inputs = <SplitTxn>[
-    for (final t in aa)
-      if ((splitsByTx[t.id] ?? const []).isNotEmpty)
-        SplitTxn(
-          currencyCode: normalizeCurrency(t.currencyCode),
-          payerPersonId: t.payerPersonId!,
-          shares: {
-            for (final s in splitsByTx[t.id]!) s.personId: s.shareAmount,
-          },
-        ),
-  ];
-
   return const ExpenseSplitService()
       .compute(transactions: inputs, participantIds: rosterIds);
+});
+
+typedef PersonCostsArgs = ({String memoryId, bool includePersonal});
+
+/// What each person actually **bore** vs **fronted**, per currency (各人收支).
+///
+/// [PersonCostTotals.net] = paid − borne, which is exactly that person's net
+/// creditor position — it reconciles against the consolidated debts, so the two
+/// views cross-check each other.
+///
+/// `includePersonal: false` drops 个人 rows, for the shared PDF where your own
+/// purchases aren't the group's business. A 个人 expense adds the same amount to
+/// its payer's paid and borne, so excluding it shifts both columns but leaves
+/// every `net` — and therefore the settlement — untouched.
+final memoryPersonCostsProvider =
+    FutureProvider.family<List<PersonCostTotals>, PersonCostsArgs>(
+        (ref, args) async {
+  final resolved =
+      await ref.watch(memoryResolvedExpensesProvider(args.memoryId).future);
+  final inputs = _toSplitTxns(args.includePersonal
+      ? resolved
+      : resolved.where((r) => r.tx.splitType != 'personal').toList());
+  final rosterIds = ref
+      .watch(memoryParticipantPersonsProvider(args.memoryId))
+      .map((p) => p.id)
+      .toList();
+
+  return const ExpenseSplitService()
+      .personCosts(transactions: inputs, participantIds: rosterIds);
 });
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
