@@ -201,6 +201,9 @@ class PdfService {
     required Map<String, String> categoryNames,
     required List<CurrencySplit> splits,
     List<PersonCostTotals> personCosts = const [],
+    /// txId → how many people share that AA expense; shown as "AA ÷N" so an
+    /// exclusion is visible in the 明细.
+    Map<String, int> sharerCounts = const {},
     bool includeExpensesTable = true,
     bool includePersonCosts = true,
     bool includeStatement = false,
@@ -258,7 +261,8 @@ class PdfService {
               if (rows.isEmpty) continue;
               any = true;
               out.add(_currencySubheader(c));
-              out.add(_expensesTable(rows, categoryNames, personNames, c));
+              out.add(_expensesTable(
+                  rows, categoryNames, personNames, sharerCounts, c));
               out.add(pw.SizedBox(height: 12));
             }
             if (!any) out.add(_emptyNote('暂无支出'));
@@ -272,6 +276,9 @@ class PdfService {
           // show up here without ever moving 差额.
           if (includePersonCosts) {
             out.add(pw.Header(level: 1, text: '各人收支 · Paid vs Borne'));
+            out.add(_legend(
+                '付款 = 垫付的金额；承担 = 应分担的费用（含自己请客的全额）；'
+                '差额 = 付款 − 承担：应收表示别人还欠 TA，应付表示 TA 还欠别人。'));
             var any = false;
             for (final c in currencies) {
               final rows =
@@ -288,6 +295,9 @@ class PdfService {
           // ── 3. Payment Statement (Req G #2, default OFF) ──────────────────
           if (includeStatement) {
             out.add(pw.Header(level: 1, text: '付款表 · Payment Statement'));
+            out.add(_legend(
+                '抵消前的明细：每行一位欠款人，单元格 = 该行欠该列（收款人）的金额。'
+                '被排除在某笔分摊外的人，那笔不产生欠款。'));
             var any = false;
             for (final c in currencies) {
               final s = splitByCurrency[c];
@@ -303,6 +313,7 @@ class PdfService {
           // ── 4. Final Consolidate (Req G #3, default ON) ───────────────────
           if (includeConsolidate) {
             out.add(pw.Header(level: 1, text: '最终结算 · Final Consolidate'));
+            out.add(_legend('两两互欠抵消后的净额：A → B 表示 A 需支付 B 这笔钱，按此转账即两清。'));
             var any = false;
             for (final c in currencies) {
               final s = splitByCurrency[c];
@@ -343,6 +354,15 @@ class PdfService {
                 fontSize: 13,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColors.brown700)),
+      );
+
+  /// One-line how-to-read note under a section header. The statement goes to
+  /// travel companions who never saw the app — the tables must explain
+  /// themselves.
+  static pw.Widget _legend(String text) => pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 6),
+        child: pw.Text(text,
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
       );
 
   static pw.Widget _emptyNote(String text) => pw.Padding(
@@ -389,14 +409,23 @@ class PdfService {
     List<Transaction> rows,
     Map<String, String> categoryNames,
     Map<String, String> personNames,
+    Map<String, int> sharerCounts,
     String currency,
   ) {
-    /// Who ends up carrying the row — the answer 方式 alone doesn't give.
-    String bearer(Transaction t) => switch (t.splitType) {
-          'split_aa' => 'AA 分摊',
-          'treat' => '${personNames[t.payerPersonId] ?? ''} 请客',
-          _ => '本人',
-        };
+    /// Who ends up carrying the row — the answer 方式 alone doesn't give. AA
+    /// shows the head count so an exclusion is visible ("AA ÷2" on a
+    /// three-person trip says someone sat this one out).
+    String bearer(Transaction t) {
+      switch (t.splitType) {
+        case 'split_aa':
+          final n = sharerCounts[t.id];
+          return n == null ? 'AA 分摊' : 'AA ÷$n';
+        case 'treat':
+          return '${personNames[t.payerPersonId] ?? ''} 请客';
+        default:
+          return '本人';
+      }
+    }
 
     final total = rows.fold<double>(0, (sum, t) => sum + t.amount);
     return pw.Column(

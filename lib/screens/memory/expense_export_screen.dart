@@ -45,6 +45,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
     List<Transaction> transactions,
     List<CurrencySplit> splits,
     List<PersonCostTotals> personCosts,
+    Map<String, int> sharerCounts,
     Map<String, String> personNames,
     Map<String, String> categoryNames,
   ) {
@@ -55,6 +56,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
       categoryNames: categoryNames,
       splits: splits,
       personCosts: personCosts,
+      sharerCounts: sharerCounts,
       includeExpensesTable: _expensesTable,
       includePersonCosts: _personCosts,
       includeStatement: _statement,
@@ -72,6 +74,9 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
     // it doesn't list.
     final costsAsync = ref.watch(memoryPersonCostsProvider(
         (memoryId: _memoryId, includePersonal: _personal)));
+    // Head count per AA expense, so the 明细 can print "AA ÷N" and make an
+    // exclusion visible without cross-referencing the statement.
+    final resolvedAsync = ref.watch(memoryResolvedExpensesProvider(_memoryId));
     final persons = ref.watch(personsProvider).value ?? const [];
     final me = ref.watch(mePersonProvider).value;
     final categories = ref.watch(categoriesProvider(null)).value ?? const [];
@@ -97,8 +102,8 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
           _buildToggles(),
           Divider(height: 1, color: t.borderColor),
           Expanded(
-            child: _buildPreview(
-                txnsAsync, splitsAsync, costsAsync, personNames, categoryNames),
+            child: _buildPreview(txnsAsync, splitsAsync, costsAsync,
+                resolvedAsync, personNames, categoryNames),
           ),
         ],
       ),
@@ -146,6 +151,7 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
     AsyncValue<List<Transaction>> txnsAsync,
     AsyncValue<List<CurrencySplit>> splitsAsync,
     AsyncValue<List<PersonCostTotals>> costsAsync,
+    AsyncValue<List<ResolvedExpense>> resolvedAsync,
     Map<String, String> personNames,
     Map<String, String> categoryNames,
   ) {
@@ -162,7 +168,12 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
 
     // The three sources feed one document, so render only once all have landed
     // rather than nesting three .when()s deep.
-    final sources = <AsyncValue<Object>>[txnsAsync, splitsAsync, costsAsync];
+    final sources = <AsyncValue<Object>>[
+      txnsAsync,
+      splitsAsync,
+      costsAsync,
+      resolvedAsync,
+    ];
     for (final a in sources) {
       if (a.hasError) return Center(child: Text('加载失败：${a.error}'));
     }
@@ -174,8 +185,16 @@ class _ExpenseExportScreenState extends ConsumerState<ExpenseExportScreen> {
       // Force a fresh render whenever the selection changes.
       key: ValueKey(Object.hash(
           _expensesTable, _personCosts, _statement, _consolidate, _personal)),
-      build: (_) => _build(txnsAsync.value!, splitsAsync.value!,
-          costsAsync.value!, personNames, categoryNames),
+      build: (_) => _build(
+          txnsAsync.value!,
+          splitsAsync.value!,
+          costsAsync.value!,
+          {
+            for (final r in resolvedAsync.value!)
+              if (r.tx.splitType == 'split_aa') r.tx.id: r.shares.length,
+          },
+          personNames,
+          categoryNames),
       allowPrinting: true,
       allowSharing: true,
       canChangePageFormat: false,
