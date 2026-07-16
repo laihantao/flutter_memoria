@@ -35,6 +35,17 @@ class CjkFontUnavailable implements Exception {
 class PdfService {
   static final _dateFmt = DateFormat('dd MMM yyyy');
 
+  /// Page geometry, declared once so a section can size against it directly.
+  ///
+  /// MultiPage lays each section out at [_kContentWidth]. Sections that need
+  /// part of that — the 分类占比 donut/table split — take their width from here
+  /// rather than pw.Expanded: Expanded asserts a flex child ends up no wider
+  /// than its allotment, but pw.Table derives its own width by summing columns
+  /// it has scaled to fill that allotment, and that float sum lands a hair over
+  /// often enough to crash the build (assert childSize <= maxChildExtent).
+  static const _kPageMargin = 40.0;
+  static final _kContentWidth = PdfPageFormat.a4.width - _kPageMargin * 2;
+
   static Future<pw.ThemeData>? _cjkTheme;
 
   /// A theme with an embedded CJK font.
@@ -263,7 +274,7 @@ class PdfService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         theme: await _cjk(),
-        margin: const pw.EdgeInsets.all(40),
+        margin: const pw.EdgeInsets.all(_kPageMargin),
         build: (context) {
           final out = <pw.Widget>[
             pw.Header(
@@ -448,12 +459,15 @@ class PdfService {
 
     String pct(double v) => '${(v / total * 100).toStringAsFixed(1)}%';
 
+    const donut = 170.0;
+    const gap = 12.0;
+
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.SizedBox(
-          width: 170,
-          height: 170,
+          width: donut,
+          height: donut,
           child: pw.Chart(
             grid: pw.PieGrid(),
             datasets: [
@@ -468,8 +482,10 @@ class PdfService {
             ],
           ),
         ),
-        pw.SizedBox(width: 12),
-        pw.Expanded(
+        pw.SizedBox(width: gap),
+        // Sized, not Expanded — see _kContentWidth.
+        pw.SizedBox(
+          width: _kContentWidth - donut - gap,
           child: pw.TableHelper.fromTextArray(
             headers: ['类别', '金额', '占比'],
             data: [
