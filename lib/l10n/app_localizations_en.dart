@@ -246,6 +246,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get memoryPersonRemoved => 'Removed';
   @override String get memoryPerPersonTitle => 'Per person';
   @override String memoryPaidUpfront(String amount) => 'Paid $amount';
+  @override String get memoryPerPersonExpandAll => 'Expand all';
+  @override String get memoryPerPersonCollapseAll => 'Collapse all';
   @override String get memoryBudgetSheetHint =>
       'Set one per currency; leave blank for no budget';
 
@@ -270,6 +272,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Personal spending is not settled, and usually not for others to see';
   @override String get exportPickAtLeastOne => 'Pick at least one section';
   @override String exportLoadFailed(String e) => 'Failed to load: $e';
+  @override String get exportSectionBlocks => 'Report sections';
+  @override String get exportPreviewButton => 'Preview';
+  @override String get exportButton => 'Export';
+  @override String get exportActionDownload => 'Download';
+  @override String get exportActionDownloadHint => 'Save the PDF to this device';
+  @override String get exportActionShare => 'Share';
+  @override String get exportActionShareHint => 'Send via another app';
+  @override String get exportPdfSaved => 'Saved';
+  @override String exportPdfFailed(String e) => 'Export failed: $e';
+  @override String get exportPreviewEmpty => 'Nothing to preview';
+  @override String exportPageOf(int page, int total) => 'Page $page of $total';
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   @override String get expensesTitle => 'Expenses';
@@ -337,6 +350,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String expenseFormPayerSuffix(String name) => '$name (paid)';
   @override String expenseFormPerHead(String amount, int n) =>
       '$amount each · split $n ways';
+  @override String get expenseFormDelete => 'Delete expense';
+  @override String get expenseDeleteTitle => 'Delete this expense?';
+  @override String get expenseDeleteBody => 'This cannot be undone.';
+  @override String get expenseDeleted => 'Deleted';
+  @override String get expenseSwipeDelete => 'Delete';
+  @override String expenseListPaidBy(String name) => 'Paid by $name';
+  @override String expenseListTreatBy(String name) => '$name treated';
 
   // ── Transaction form ───────────────────────────────────────────────────────
   @override String get txFormNew => 'New Transaction';

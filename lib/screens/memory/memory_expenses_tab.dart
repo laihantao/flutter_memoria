@@ -303,7 +303,7 @@ class _StatsView extends ConsumerWidget {
           // 收支 is a whole-team question — it has no meaning under 我的.
           if (!mine) ...[
             const SizedBox(height: 12),
-            _PersonCostsCard(memoryId: memoryId),
+            _PersonCostsCard(memoryId: memoryId, catMap: catMap),
           ],
         ] else
           _StatCard(
@@ -756,24 +756,39 @@ class _DonutPainter extends CustomPainter {
 /// position, and netting is pairwise: someone can be square overall and still
 /// owe one companion while another owes them, so "已结清" would be a lie
 /// exactly when it matters. Who-pays-whom is the PDF statement's job.
-class _PersonCostsCard extends ConsumerWidget {
+///
+/// Each row expands to the expenses behind its 承担 figure — the RM 26 + 7.60 +
+/// 16.25 that makes a bare "RM 49.85" trustworthy without opening every expense.
+class _PersonCostsCard extends ConsumerStatefulWidget {
   final String memoryId;
-  const _PersonCostsCard({required this.memoryId});
+  final Map<String, Category> catMap;
+  const _PersonCostsCard({required this.memoryId, required this.catMap});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PersonCostsCard> createState() => _PersonCostsCardState();
+}
+
+class _PersonCostsCardState extends ConsumerState<_PersonCostsCard> {
+  /// Expanded rows, by [personBorneKey]. Person+currency, not person: the same
+  /// person has one row per currency and they open independently.
+  final _expanded = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
     // This dashboard is the user's own — nothing to withhold, unlike the
     // shared PDF, so 个人 rows count toward 付款/承担 here.
-    final rows = ref
-        .watch(memoryPersonCostsProvider(
-            (memoryId: memoryId, includePersonal: true)))
-        .value;
+    const includePersonal = true;
+    final args = (memoryId: widget.memoryId, includePersonal: includePersonal);
+    final rows = ref.watch(memoryPersonCostsProvider(args)).value;
     if (rows == null || rows.isEmpty) return const SizedBox.shrink();
+    final breakdown =
+        ref.watch(memoryPersonBreakdownProvider(args)).value ?? const {};
 
-    final roster = ref.watch(memoryParticipantPersonsProvider(memoryId));
+    final roster = ref.watch(memoryParticipantPersonsProvider(widget.memoryId));
     final names = {for (final p in roster) p.id: p.name};
-    String label(String id) => names[id] ?? context.l10n.memoryPersonRemoved;
+    String label(String id) => names[id] ?? l10n.memoryPersonRemoved;
 
     // Group by currency, preserving the service's (sorted) currency order.
     final byCurrency = <String, List<PersonCostTotals>>{};
@@ -781,8 +796,32 @@ class _PersonCostsCard extends ConsumerWidget {
       (byCurrency[r.currencyCode] ??= []).add(r);
     }
 
+    final keys = [
+      for (final r in rows) personBorneKey(r.personId, r.currencyCode),
+    ];
+    final allOpen = keys.every(_expanded.contains);
+
     return _StatCard(
-      title: context.l10n.memoryPerPersonTitle,
+      title: l10n.memoryPerPersonTitle,
+      action: TextButton(
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: () => setState(() {
+          _expanded.clear();
+          if (!allOpen) _expanded.addAll(keys);
+        }),
+        child: Text(
+          allOpen
+              ? l10n.memoryPerPersonCollapseAll
+              : l10n.memoryPerPersonExpandAll,
+          style: GoogleFonts.notoSansSc(
+              fontSize: 12, fontWeight: FontWeight.w600, color: t.accentColor),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -798,10 +837,19 @@ class _PersonCostsCard extends ConsumerWidget {
               ),
             for (int i = 0; i < entry.value.length; i++) ...[
               if (i > 0) Divider(height: 14, color: t.borderColor),
-              _PersonCostRow(
-                name: label(entry.value[i].personId),
-                totals: entry.value[i],
-              ),
+              Builder(builder: (context) {
+                final key = personBorneKey(
+                    entry.value[i].personId, entry.value[i].currencyCode);
+                return _PersonCostRow(
+                  name: label(entry.value[i].personId),
+                  totals: entry.value[i],
+                  lines: breakdown[key] ?? const [],
+                  catMap: widget.catMap,
+                  expanded: _expanded.contains(key),
+                  onToggle: () => setState(() =>
+                      _expanded.contains(key) ? _expanded.remove(key) : _expanded.add(key)),
+                );
+              }),
             ],
           ],
         ],
@@ -813,53 +861,179 @@ class _PersonCostsCard extends ConsumerWidget {
 class _PersonCostRow extends StatelessWidget {
   final String name;
   final PersonCostTotals totals;
-  const _PersonCostRow({required this.name, required this.totals});
+  final List<BorneLine> lines;
+  final Map<String, Category> catMap;
+  final bool expanded;
+  final VoidCallback onToggle;
+  const _PersonCostRow({
+    required this.name,
+    required this.totals,
+    required this.lines,
+    required this.catMap,
+    required this.expanded,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).extension<AppThemeExtension>()!;
     final c = totals.currencyCode;
+    // Nothing to open when the breakdown hasn't loaded (or a roster-drift row
+    // has no lines) — don't offer an affordance that expands to emptiness.
+    final canExpand = lines.isNotEmpty;
+    final open = expanded && canExpand;
 
-    return Row(
+    return Column(
       children: [
-        CircleAvatar(
-          radius: 13,
-          backgroundColor: t.mutedColor,
-          child: Text(
-            name.characters.first.toUpperCase(),
-            style: TextStyle(fontSize: 11, color: t.textSecondary),
+        InkWell(
+          onTap: canExpand ? onToggle : null,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: t.mutedColor,
+                  child: Text(
+                    name.characters.first.toUpperCase(),
+                    style: TextStyle(fontSize: 11, color: t.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: t.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        context.l10n.memoryPaidUpfront(
+                            formatMoneyWithSymbol(totals.paid, c)),
+                        style: GoogleFonts.notoSansSc(
+                            fontSize: 11.5, color: t.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  formatMoneyWithSymbol(totals.borne, c),
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: t.textPrimary),
+                ),
+                if (canExpand)
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: Icon(Icons.keyboard_arrow_down,
+                        size: 18, color: t.textSecondary),
+                  )
+                else
+                  const SizedBox(width: 18),
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: GoogleFonts.notoSansSc(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: t.textPrimary),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                context.l10n
-                    .memoryPaidUpfront(formatMoneyWithSymbol(totals.paid, c)),
-                style: GoogleFonts.notoSansSc(
-                    fontSize: 11.5, color: t.textSecondary),
-              ),
-            ],
-          ),
-        ),
-        Text(
-          formatMoneyWithSymbol(totals.borne, c),
-          style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: t.textPrimary),
+        // AnimatedSize, not AnimatedCrossFade: a collapsed breakdown must leave
+        // the tree, not merely stop being painted — it is still a11y-reachable
+        // and findable otherwise.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: open
+              ? _BorneBreakdown(lines: lines, catMap: catMap)
+              : const SizedBox(width: double.infinity),
         ),
       ],
+    );
+  }
+}
+
+/// The expenses behind one person's 承担: what it was, and how their slice of it
+/// was arrived at (`RM 130.00 ÷ 5`).
+class _BorneBreakdown extends StatelessWidget {
+  final List<BorneLine> lines;
+  final Map<String, Category> catMap;
+  const _BorneBreakdown({required this.lines, required this.catMap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
+
+    return Container(
+      // Indented under the name, not the avatar, so it reads as that person's.
+      margin: const EdgeInsets.only(left: 36, top: 6, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: t.mutedColor.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < lines.length; i++) ...[
+            if (i > 0) const SizedBox(height: 7),
+            Builder(builder: (context) {
+              final line = lines[i];
+              final tx = line.tx;
+              final ccy = tx.currencyCode;
+              final note = (tx.note ?? '').trim();
+              final title = note.isNotEmpty
+                  ? note
+                  : (catMap[tx.categoryId]?.name ?? tx.categoryId);
+              // ÷1 is noise — 个人/请客 bear the whole amount, and the amount
+              // alone already says so.
+              final formula = line.sharerCount > 1
+                  ? '${formatMoneyWithSymbol(tx.amount, ccy)} ÷ ${line.sharerCount}'
+                  : formatMoneyWithSymbol(tx.amount, ccy);
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.notoSansSc(
+                              fontSize: 12, color: t.textPrimary),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          '${l10n.formatMonthDay(tx.txnDate)} · $formula',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11, color: t.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    formatMoneyWithSymbol(line.share, ccy),
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: t.textPrimary),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -893,7 +1067,7 @@ class _SplitBadge extends StatelessWidget {
   }
 }
 
-class _DetailList extends StatelessWidget {
+class _DetailList extends ConsumerWidget {
   final String memoryId;
   final List<Transaction> txns;
   final Map<String, Category> catMap;
@@ -901,98 +1075,319 @@ class _DetailList extends StatelessWidget {
       {required this.memoryId, required this.txns, required this.catMap});
 
   @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).extension<AppThemeExtension>()!;
-    final l10n = context.l10n;
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Roster resolves payer ids to names for the 请客 "who paid" line.
+    final roster = ref.watch(memoryParticipantPersonsProvider(memoryId));
+    final names = {for (final p in roster) p.id: p.name};
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
       itemCount: txns.length,
       itemBuilder: (context, i) {
         final tx = txns[i];
-        final cat = catMap[tx.categoryId];
-        final isExp = tx.type == 'expense';
-
-        return GestureDetector(
-          onTap: () =>
+        return _ExpenseRow(
+          key: ValueKey(tx.id),
+          tx: tx,
+          category: catMap[tx.categoryId],
+          payerName: tx.payerPersonId == null
+              ? null
+              : names[tx.payerPersonId] ?? context.l10n.memoryPersonRemoved,
+          onEdit: () =>
               context.push('/memories/$memoryId/expenses/${tx.id}/edit'),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: t.surfaceColor,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: t.cardShadow.withValues(alpha: 0.35),
-                  offset: const Offset(0, 4),
-                  blurRadius: 14,
-                  spreadRadius: -9,
-                ),
-              ],
+          onConfirmDelete: () => _confirmDelete(context, ref, tx),
+        );
+      },
+    );
+  }
+
+  /// Confirmation → delete → feedback. Returns true when the row was deleted, so
+  /// the swipe wrapper knows whether to spring shut (cancelled) or let the list
+  /// drop the row (deleted).
+  Future<bool> _confirmDelete(
+      BuildContext context, WidgetRef ref, Transaction tx) async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.expenseDeleteTitle),
+        content: Text(l10n.expenseDeleteBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel)),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.delete,
+                  style: TextStyle(color: Colors.red.shade400))),
+        ],
+      ),
+    );
+    if (ok != true) return false;
+    await ref.read(expenseNotifierProvider.notifier).deleteTransaction(tx.id);
+    messenger.showSnackBar(SnackBar(
+      content: Text(l10n.expenseDeleted),
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
+    return true;
+  }
+}
+
+/// One 明细 row: the expense card, wrapped so a left-swipe reveals a delete
+/// action on its right.
+///
+/// Card layout leads with the **description** (the note) — what the expense
+/// actually was — and demotes the category to a subtitle tag. A 请客 row also
+/// names who paid, since that's the whole point of a treat.
+class _ExpenseRow extends StatelessWidget {
+  final Transaction tx;
+  final Category? category;
+  final String? payerName;
+  final VoidCallback onEdit;
+  final Future<bool> Function() onConfirmDelete;
+  const _ExpenseRow({
+    super.key,
+    required this.tx,
+    required this.category,
+    required this.payerName,
+    required this.onEdit,
+    required this.onConfirmDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).extension<AppThemeExtension>()!;
+    final l10n = context.l10n;
+    final isExp = tx.type == 'expense';
+    final note = (tx.note ?? '').trim();
+    final categoryName = category?.name ?? tx.categoryId;
+    // Title is the description; fall back to the category when there's no note,
+    // so the row is never headed by an empty string.
+    final title = note.isNotEmpty ? note : categoryName;
+
+    // Subtitle parts: the category (unless it's already the title), the date,
+    // and — for a treat — who fronted it.
+    final parts = <String>[
+      if (note.isNotEmpty) categoryName,
+      l10n.formatMonthDay(tx.txnDate),
+      if (tx.splitType == 'treat' && payerName != null)
+        l10n.expenseListPaidBy(payerName!),
+    ];
+
+    return _SwipeToDelete(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onEdit,
+      onDelete: onConfirmDelete,
+      deleteLabel: l10n.expenseSwipeDelete,
+      child: Container(
+        decoration: BoxDecoration(
+          color: t.surfaceColor,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: t.cardShadow.withValues(alpha: 0.35),
+              offset: const Offset(0, 4),
+              blurRadius: 14,
+              spreadRadius: -9,
             ),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: t.mutedColor,
-                    borderRadius: BorderRadius.circular(13),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: t.mutedColor,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Center(
+                child: Text(category?.iconName ?? '💰',
+                    style: const TextStyle(fontSize: 20)),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.notoSansSc(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: t.textPrimary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: Center(
-                    child: Text(cat?.iconName ?? '💰',
-                        style: const TextStyle(fontSize: 20)),
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 3),
+                  Row(
                     children: [
-                      Text(
-                        cat?.name ?? tx.categoryId,
-                        style: GoogleFonts.notoSansSc(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: t.textPrimary),
+                      _SplitBadge(splitType: tx.splitType),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          parts.join(' · '),
+                          style: GoogleFonts.notoSansSc(
+                              fontSize: 12, color: t.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              // Per-row currency — a trip can mix RM and S$ rows.
+              '${isExp ? '−' : '+'}${formatMoneyWithSymbol(tx.amount, tx.currencyCode)}',
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: t.textPrimary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Swipe-left-to-reveal a delete action, then tap to fire it.
+///
+/// Not [Dismissible]: the ask is a revealed button you deliberately tap (which
+/// then confirms), not a fling that deletes on release. The card tracks the
+/// finger up to [_revealWidth] and springs to the nearer end on release. A tap
+/// on an open card closes it; a tap on a closed card is [onTap].
+class _SwipeToDelete extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  /// Runs the confirm+delete flow. Resolves true when the row was deleted (the
+  /// list drops it), false when cancelled (we spring shut).
+  final Future<bool> Function() onDelete;
+  final String deleteLabel;
+  final BorderRadius borderRadius;
+  const _SwipeToDelete({
+    required this.child,
+    required this.onTap,
+    required this.onDelete,
+    required this.deleteLabel,
+    required this.borderRadius,
+  });
+
+  @override
+  State<_SwipeToDelete> createState() => _SwipeToDeleteState();
+}
+
+class _SwipeToDeleteState extends State<_SwipeToDelete>
+    with SingleTickerProviderStateMixin {
+  static const double _revealWidth = 88;
+  // Row gap, kept in sync with the ListView's per-item spacing below so the red
+  // panel lines up with the card and not its bottom margin.
+  static const double _rowGap = 10;
+
+  late final AnimationController _ctrl;
+  Animation<double>? _snap;
+  double _drag = 0; // 0 = closed, −_revealWidth = fully open. Never positive.
+
+  bool get _open => _drag <= -_revealWidth + 0.5;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 180));
+    _ctrl.addListener(() {
+      if (_snap != null) setState(() => _drag = _snap!.value);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _animateTo(double target) {
+    _snap = Tween<double>(begin: _drag, end: target)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+    _ctrl.forward(from: 0);
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    _snap = null; // hand control back to the finger
+    setState(() => _drag = (_drag + d.delta.dx).clamp(-_revealWidth, 0.0));
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    final v = d.primaryVelocity ?? 0;
+    // Fling decides direction; otherwise snap to whichever end is nearer.
+    final target = v < -300
+        ? -_revealWidth
+        : v > 300
+            ? 0.0
+            : (_drag < -_revealWidth / 2 ? -_revealWidth : 0.0);
+    _animateTo(target);
+  }
+
+  Future<void> _fireDelete() async {
+    final deleted = await widget.onDelete();
+    if (!deleted && mounted) _animateTo(0); // cancelled → spring shut
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _rowGap),
+      child: Stack(
+        children: [
+          // Delete panel behind the card, filling its height (not the gap).
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: _fireDelete,
+                child: Container(
+                  width: _revealWidth,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade400,
+                    borderRadius: widget.borderRadius,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.delete_outline,
+                          color: Colors.white, size: 22),
                       const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          _SplitBadge(splitType: tx.splitType),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              (tx.note ?? '').isNotEmpty
-                                  ? '${l10n.formatMonthDay(tx.txnDate)} · ${tx.note}'
-                                  : l10n.formatMonthDay(tx.txnDate),
-                              style: GoogleFonts.notoSansSc(
-                                  fontSize: 12, color: t.textSecondary),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        widget.deleteLabel,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  // Per-row currency — a trip can mix RM and S$ rows.
-                  '${isExp ? '−' : '+'}${formatMoneyWithSymbol(tx.amount, tx.currencyCode)}',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: t.textPrimary),
-                ),
-              ],
+              ),
             ),
           ),
-        );
-      },
+          Transform.translate(
+            offset: Offset(_drag, 0),
+            child: GestureDetector(
+              onHorizontalDragUpdate: _onDragUpdate,
+              onHorizontalDragEnd: _onDragEnd,
+              onTap: _open ? () => _animateTo(0) : widget.onTap,
+              child: widget.child,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

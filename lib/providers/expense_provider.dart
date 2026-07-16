@@ -165,6 +165,46 @@ final memoryPersonCostsProvider =
       .personCosts(transactions: inputs, participantIds: rosterIds);
 });
 
+/// One expense's contribution to a person's 承担 total.
+///
+/// [sharerCount] is how many people bore that expense, i.e. the ÷N behind an AA
+/// share. It is 1 for 个人/请客, where the payer bore the whole amount.
+typedef BorneLine = ({Transaction tx, double share, int sharerCount});
+
+/// Key into [memoryPersonBreakdownProvider]. Currency is normalized to match the
+/// grouping [memoryPersonCostsProvider] uses.
+String personBorneKey(String personId, String currencyCode) =>
+    '$personId|${normalizeCurrency(currencyCode)}';
+
+/// `personBorneKey(...)` → the expenses that add up to that person's `borne`.
+///
+/// The line items behind [memoryPersonCostsProvider]'s totals: same source, same
+/// 个人 filter, same shares. Their sum reconciles to `borne` because a share is
+/// already rounded where it is stored, so nothing is rounded twice here.
+final memoryPersonBreakdownProvider =
+    FutureProvider.family<Map<String, List<BorneLine>>, PersonCostsArgs>(
+        (ref, args) async {
+  final resolved =
+      await ref.watch(memoryResolvedExpensesProvider(args.memoryId).future);
+
+  final out = <String, List<BorneLine>>{};
+  for (final r in resolved) {
+    if (!args.includePersonal && r.tx.splitType == 'personal') continue;
+    r.shares.forEach((personId, share) {
+      if (share == 0) return;
+      (out[personBorneKey(personId, r.tx.currencyCode)] ??= []).add(
+        (tx: r.tx, share: share, sharerCount: r.shares.length),
+      );
+    });
+  }
+  // Biggest bite first — the question the breakdown answers is "what made this
+  // number so big", and the answer should be the first line.
+  for (final lines in out.values) {
+    lines.sort((a, b) => b.share.compareTo(a.share));
+  }
+  return out;
+});
+
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class ExpenseNotifier extends AsyncNotifier<void> {

@@ -1219,8 +1219,15 @@ class _QuickStatsRow extends StatelessWidget {
     final hasBudget = budget != null && budget! > 0;
     final compact = hasBudget;
 
+    // Count cards (相册 / 行程站) hold 1–2 digits; the money cards (费用 / 预算)
+    // hold a currency amount that overflowed at equal widths — a 4-digit budget
+    // was clipping. Give the money cards more of the row.
+    const countFlex = 3;
+    const moneyFlex = 4;
+
     final cards = <Widget>[
       Expanded(
+        flex: countFlex,
         child: _StatCard(
           emoji: '🖼️',
           value: '$photoCount',
@@ -1231,6 +1238,7 @@ class _QuickStatsRow extends StatelessWidget {
       ),
       const SizedBox(width: 8),
       Expanded(
+        flex: countFlex,
         child: _StatCard(
           emoji: '🗺️',
           value: '$itineraryCount',
@@ -1241,6 +1249,7 @@ class _QuickStatsRow extends StatelessWidget {
       ),
       const SizedBox(width: 8),
       Expanded(
+        flex: moneyFlex,
         child: _StatCard(
           emoji: '🧾',
           value: _expenseLabel,
@@ -1253,6 +1262,7 @@ class _QuickStatsRow extends StatelessWidget {
       if (hasBudget) ...[
         const SizedBox(width: 8),
         Expanded(
+          flex: moneyFlex,
           child: _StatCard(
             emoji: '👛',
             value: _budgetLabel,
@@ -1294,12 +1304,12 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
 
-    final double emojiSize = compact ? 17 : 18;
+    final double emojiSize = compact ? 16 : 17;
     final double valueFontSize =
-        isAmount ? (compact ? 14 : 17) : (compact ? 18 : 21);
-    final double vPad = compact ? 13 : 15;
-    final double hPad = compact ? 4 : 8;
-    final double radius = compact ? 16 : 18;
+        isAmount ? (compact ? 14 : 16) : (compact ? 17 : 20);
+    final double vPad = compact ? 10 : 12;
+    final double hPad = compact ? 6 : 8;
+    final double radius = compact ? 15 : 17;
 
     if (isPrimary) {
       return GestureDetector(

@@ -7,7 +7,6 @@ import '../../l10n/app_localizations.dart';
 import '../../providers/currency_provider.dart';
 import '../../providers/database_provider.dart';
 import '../../providers/expense_provider.dart';
-import '../../providers/memory_provider.dart';
 import '../../providers/person_provider.dart';
 import '../../theme/app_theme_extension.dart';
 import '../../utils/money.dart';
@@ -302,7 +301,6 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
     final l10n = context.l10n;
     final t = _t;
     final categoriesAsync = ref.watch(categoriesProvider(_type));
-    final memoriesAsync = ref.watch(memoriesProvider);
     final symbol = currencySymbol(_currency);
     // Currency picker = the user's enabled set, plus the current value so
     // editing a transaction in a since-disabled currency still shows it.
@@ -381,9 +379,10 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
                 children: [
                   _buildCategorySection(categoriesAsync, l10n),
                   Divider(height: 1, color: t.borderColor),
-                  _buildMemorySection(memoriesAsync, l10n),
-                  Divider(height: 1, color: t.borderColor),
                   _buildSplitSection(l10n),
+                  // Editing an existing expense: offer to delete it here, at the
+                  // bottom of the form. Absent when creating (nothing to delete).
+                  if (widget.transactionId != null) _buildDeleteButton(l10n),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -550,61 +549,64 @@ class _ExpenseFormState extends ConsumerState<ExpenseFormScreen> {
     );
   }
 
-  // ── Memory section ──────────────────────────────────────────────────────────
+  // ── Delete ──────────────────────────────────────────────────────────────────
 
-  Widget _buildMemorySection(
-      AsyncValue<List<Memory>> memoriesAsync, AppLocalizations l10n) {
-    final t = _t;
-    final memories = memoriesAsync.value;
-    if (memories == null || memories.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-          child: Row(
-            children: [
-              Icon(Icons.photo_album_outlined,
-                  size: 18, color: t.textSecondary.withValues(alpha: 0.6)),
-              const SizedBox(width: 6),
-              Text(context.l10n.expenseFormMemory,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: t.textSecondary.withValues(alpha: 0.7))),
-            ],
+  Widget _buildDeleteButton(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _saving ? null : _delete,
+          icon: const Icon(Icons.delete_outline, size: 18),
+          label: Text(l10n.expenseFormDelete),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red.shade400,
+            side: BorderSide(color: Colors.red.shade200),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
           ),
         ),
-        SizedBox(
-          height: 36,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            children: [
-              // No "无" option: an expense must belong to a memory, otherwise it
-              // becomes unreachable (there's no standalone expense list anymore).
-              ...memories.map((m) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(m.title,
-                          style: const TextStyle(fontSize: 12),
-                          overflow: TextOverflow.ellipsis),
-                      selected: _memoryId == m.id,
-                      // Switching trips invalidates the previous roster's exclude set.
-                      onSelected: (_) => setState(() {
-                        if (_memoryId != m.id) _excludedIds.clear();
-                        _memoryId = m.id;
-                      }),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  )),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
+      ),
     );
+  }
+
+  Future<void> _delete() async {
+    final l10n = context.l10n;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.expenseDeleteTitle),
+        content: Text(l10n.expenseDeleteBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel)),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.delete,
+                  style: TextStyle(color: Colors.red.shade400))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(expenseNotifierProvider.notifier)
+          .deleteTransaction(widget.transactionId!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.expenseDeleted),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+        context.pop();
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   // ── Split section ───────────────────────────────────────────────────────────

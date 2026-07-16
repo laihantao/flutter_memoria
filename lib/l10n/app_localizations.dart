@@ -235,6 +235,8 @@ abstract class AppLocalizations {
   String get memoryPersonRemoved;
   String get memoryPerPersonTitle;
   String memoryPaidUpfront(String amount);
+  String get memoryPerPersonExpandAll;
+  String get memoryPerPersonCollapseAll;
   String get memoryBudgetSheetHint;
 
   // ── Memory PDF export ──────────────────────────────────────────────────────
@@ -253,6 +255,17 @@ abstract class AppLocalizations {
   String get exportIncludePersonalHint;
   String get exportPickAtLeastOne;
   String exportLoadFailed(String e);
+  String get exportSectionBlocks;
+  String get exportPreviewButton;
+  String get exportButton;
+  String get exportActionDownload;
+  String get exportActionDownloadHint;
+  String get exportActionShare;
+  String get exportActionShareHint;
+  String get exportPdfSaved;
+  String exportPdfFailed(String e);
+  String get exportPreviewEmpty;
+  String exportPageOf(int page, int total);
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   String get expensesTitle;
@@ -310,6 +323,13 @@ abstract class AppLocalizations {
   String get expenseFormExcluded;
   String expenseFormPayerSuffix(String name);
   String expenseFormPerHead(String amount, int n);
+  String get expenseFormDelete;
+  String get expenseDeleteTitle;
+  String get expenseDeleteBody;
+  String get expenseDeleted;
+  String get expenseSwipeDelete;
+  String expenseListPaidBy(String name);
+  String expenseListTreatBy(String name);
 
   // ── Transaction form (legacy wallet flow) ─────────────────────────────────
   String get txFormNew;

@@ -243,6 +243,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get memoryPersonRemoved => '已移除';
   @override String get memoryPerPersonTitle => '各人消费';
   @override String memoryPaidUpfront(String amount) => '垫付 $amount';
+  @override String get memoryPerPersonExpandAll => '全部展开';
+  @override String get memoryPerPersonCollapseAll => '全部收起';
   @override String get memoryBudgetSheetHint => '按币种设置，留空表示不设预算';
 
   // ── Memory PDF export ──────────────────────────────────────────────────────
@@ -261,6 +263,17 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get exportIncludePersonalHint => '个人消费不参与结算，通常无需给同行人看';
   @override String get exportPickAtLeastOne => '请至少选择一个区块';
   @override String exportLoadFailed(String e) => '加载失败：$e';
+  @override String get exportSectionBlocks => '报告内容';
+  @override String get exportPreviewButton => '预览';
+  @override String get exportButton => '导出';
+  @override String get exportActionDownload => '下载';
+  @override String get exportActionDownloadHint => '保存 PDF 到设备';
+  @override String get exportActionShare => '分享';
+  @override String get exportActionShareHint => '通过其他应用发送';
+  @override String get exportPdfSaved => '已保存';
+  @override String exportPdfFailed(String e) => '导出失败：$e';
+  @override String get exportPreviewEmpty => '无内容可预览';
+  @override String exportPageOf(int page, int total) => '第 $page 页 · 共 $total 页';
 
   // ── Expenses screen ────────────────────────────────────────────────────────
   @override String get expensesTitle => '记账';
@@ -324,6 +337,13 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String expenseFormPayerSuffix(String name) => '$name（付款）';
   @override String expenseFormPerHead(String amount, int n) =>
       '每人 $amount · $n 人分摊';
+  @override String get expenseFormDelete => '删除这笔';
+  @override String get expenseDeleteTitle => '删除这笔费用？';
+  @override String get expenseDeleteBody => '此操作无法撤销。';
+  @override String get expenseDeleted => '已删除';
+  @override String get expenseSwipeDelete => '删除';
+  @override String expenseListPaidBy(String name) => '$name 付款';
+  @override String expenseListTreatBy(String name) => '$name 请客';
 
   // ── Transaction form ───────────────────────────────────────────────────────
   @override String get txFormNew => '新建交易';

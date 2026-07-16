@@ -35,6 +35,23 @@ class CjkFontUnavailable implements Exception {
 class PdfService {
   static final _dateFmt = DateFormat('dd MMM yyyy');
 
+  // ── Expense-report design tokens (陶土+米白, mirrors the app theme) ─────────
+  // Certificate-style chrome after Pocket Gold: paper ground, double frame,
+  // letter-spaced brand header, diamond rules, dashed dividers.
+  static final _paper = PdfColor.fromHex('#F7F2EA');
+  static final _clay = PdfColor.fromHex('#B0552F');
+  static final _clayDeep = PdfColor.fromHex('#9A4E2E');
+  static final _ink = PdfColor.fromHex('#3A2D26');
+  static final _mutedTx = PdfColor.fromHex('#94806F');
+  static final _tint = PdfColor.fromHex('#F3EADE');
+  // Clay pre-blended onto paper — flat colors keep the PDF free of
+  // transparency graphic states.
+  static final _line = PdfColor.fromHex('#D8C2B0');
+  static final _dash = PdfColor.fromHex('#E2D0C1');
+
+  static const _dashedSide =
+      pw.BorderSide(width: 0.75, style: pw.BorderStyle.dashed);
+
   /// Page geometry, declared once so a section can size against it directly.
   ///
   /// MultiPage lays each section out at [_kContentWidth]. Sections that need
@@ -43,7 +60,10 @@ class PdfService {
   /// than its allotment, but pw.Table derives its own width by summing columns
   /// it has scaled to fill that allotment, and that float sum lands a hair over
   /// often enough to crash the build (assert childSize <= maxChildExtent).
-  static const _kPageMargin = 40.0;
+  ///
+  /// The horizontal margin clears the certificate frame: paper inset 19.5 +
+  /// frames + breathing room.
+  static const _kPageMargin = 54.0;
   static final _kContentWidth = PdfPageFormat.a4.width - _kPageMargin * 2;
 
   static Future<pw.ThemeData>? _cjkTheme;
@@ -269,32 +289,195 @@ class PdfService {
     String nameOf(String? id) =>
         id == null ? '' : (personNames[id] ?? id);
 
-    final pdf = pw.Document();
+    // Summary strip numbers: what the header answers before any table does.
+    final totalByCurrency = <String, double>{};
+    for (final t in expenseTxns) {
+      final c = normalizeCurrency(t.currencyCode);
+      totalByCurrency[c] = (totalByCurrency[c] ?? 0) + t.amount;
+    }
+    final dateRange = '${_dateFmt.format(memory.startDate)}'
+        '${memory.endDate != null ? ' – ${_dateFmt.format(memory.endDate!)}' : ''}';
+    final generatedStr = DateFormat('d MMM yyyy').format(DateTime.now());
+
+    // ── Page chrome: paper + double frame (background of every page) ────────
+    pw.Widget buildBackground(pw.Context _) => pw.FullPage(
+          ignoreMargins: true,
+          child: pw.Container(
+            color: _paper,
+            padding: const pw.EdgeInsets.all(19.5),
+            child: pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: _line, width: 0.75),
+                borderRadius: pw.BorderRadius.circular(3),
+              ),
+              padding: const pw.EdgeInsets.all(3.75),
+              child: pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(
+                      color: _dash,
+                      width: 0.75,
+                      style: pw.BorderStyle.dashed),
+                  borderRadius: pw.BorderRadius.circular(10.5),
+                ),
+              ),
+            ),
+          ),
+        );
+
+    // ── Header (every page): brand, rule, trip line, summary strip ──────────
+    pw.Widget buildHeader(pw.Context ctx) {
+      pw.Widget summaryCell(String label, String value,
+          {bool leftDivider = false}) {
+        return pw.Expanded(
+          child: pw.Container(
+            decoration: leftDivider
+                ? pw.BoxDecoration(
+                    border:
+                        pw.Border(left: _dashedSide.copyWith(color: _dash)))
+                : null,
+            child: pw.Column(children: [
+              pw.Text(label,
+                  style: pw.TextStyle(
+                      fontSize: 7.5, color: _mutedTx, letterSpacing: 2.5)),
+              pw.SizedBox(height: 3),
+              pw.Text(value,
+                  style: pw.TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _clayDeep)),
+            ]),
+          ),
+        );
+      }
+
+      // Only the first page carries the full masthead; later pages get a slim
+      // brand line so the tables keep their room.
+      if (ctx.pageNumber > 1) {
+        return pw.Container(
+          margin: const pw.EdgeInsets.only(bottom: 14),
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          decoration: pw.BoxDecoration(
+              border: pw.Border(
+                  bottom: pw.BorderSide(color: _line, width: 0.75))),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Memora',
+                  style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _clay,
+                      letterSpacing: 1.2)),
+              pw.Text('${memory.title} · 支出报告',
+                  style: pw.TextStyle(fontSize: 8.5, color: _mutedTx)),
+            ],
+          ),
+        );
+      }
+
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Text('Memora',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                  fontSize: 26,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _clay,
+                  letterSpacing: 2)),
+          pw.SizedBox(height: 6),
+          pw.Padding(
+            // Letter-spacing trails each glyph; nudge right to re-center.
+            padding: const pw.EdgeInsets.only(left: 5.6),
+            child: pw.Text('支出报告',
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _clayDeep,
+                    letterSpacing: 5.6)),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 13, bottom: 9),
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
+                pw.Expanded(child: pw.Container(height: 0.75, color: _line)),
+                pw.SizedBox(width: 10.5),
+                _diamond(5, _clay),
+                pw.SizedBox(width: 10.5),
+                pw.Expanded(child: pw.Container(height: 0.75, color: _line)),
+              ],
+            ),
+          ),
+          pw.Text(memory.title,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                  fontSize: 13, fontWeight: pw.FontWeight.bold, color: _ink)),
+          pw.SizedBox(height: 3),
+          pw.Text('$dateRange · 生成于 $generatedStr',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                  fontSize: 8.25, color: _mutedTx, letterSpacing: 1.15)),
+          pw.Container(
+            margin: const pw.EdgeInsets.only(top: 15, bottom: 18),
+            padding: const pw.EdgeInsets.symmetric(vertical: 11),
+            decoration: pw.BoxDecoration(
+              color: _tint,
+              border: pw.Border.all(
+                  color: _dash, width: 0.75, style: pw.BorderStyle.dashed),
+              borderRadius: pw.BorderRadius.circular(9),
+            ),
+            child: pw.Row(children: [
+              summaryCell('笔数', '${expenseTxns.length} 笔'),
+              for (final e in totalByCurrency.entries)
+                summaryCell('总支出 ${e.key}',
+                    formatMoneyWithSymbol(e.value, e.key),
+                    leftDivider: true),
+            ]),
+          ),
+        ],
+      );
+    }
+
+    // ── Footer (every page) ──────────────────────────────────────────────────
+    pw.Widget buildFooter(pw.Context ctx) => pw.Container(
+          margin: const pw.EdgeInsets.only(top: 16),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Expanded(child: _dashedLine()),
+              pw.SizedBox(width: 12),
+              pw.Text(
+                '第 ${ctx.pageNumber} 页 · 共 ${ctx.pagesCount} 页  —  Memora',
+                style: pw.TextStyle(
+                    fontSize: 8.25, color: _mutedTx, letterSpacing: 1),
+              ),
+              pw.SizedBox(width: 12),
+              pw.Expanded(child: _dashedLine()),
+            ],
+          ),
+        );
+
+    final pdf = pw.Document(title: '${memory.title} — 支出报告');
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        theme: await _cjk(),
-        margin: const pw.EdgeInsets.all(_kPageMargin),
+        maxPages: 200,
+        pageTheme: pw.PageTheme(
+          pageFormat: PdfPageFormat.a4,
+          theme: await _cjk(),
+          margin: const pw.EdgeInsets.fromLTRB(
+              _kPageMargin, 48, _kPageMargin, 44),
+          buildBackground: buildBackground,
+        ),
+        header: buildHeader,
+        footer: buildFooter,
         build: (context) {
-          final out = <pw.Widget>[
-            pw.Header(
-              level: 0,
-              child: pw.Text('${memory.title} — 支出报告',
-                  style: pw.TextStyle(
-                      fontSize: 22, fontWeight: pw.FontWeight.bold)),
-            ),
-            pw.SizedBox(height: 8),
-            pw.Text(
-              '${_dateFmt.format(memory.startDate)}'
-              '${memory.endDate != null ? ' – ${_dateFmt.format(memory.endDate!)}' : ''}',
-              style: const pw.TextStyle(fontSize: 12),
-            ),
-            pw.Divider(),
-          ];
+          final out = <pw.Widget>[];
 
           // ── 1. Expenses table (Req G #1, default ON) ──────────────────────
           if (includeExpensesTable) {
-            out.add(pw.Header(level: 1, text: '支出明细 · Expenses'));
+            out.add(_sectionHeader('支出明细', 'EXPENSES'));
             var any = false;
             for (final c in currencies) {
               final rows = expenseTxns
@@ -315,7 +498,7 @@ class PdfService {
 
           // ── 2. 分类占比 — where the money went ────────────────────────────
           if (includeCategoryChart) {
-            out.add(pw.Header(level: 1, text: '分类占比 · By Category'));
+            out.add(_sectionHeader('分类占比', 'BY CATEGORY'));
             var any = false;
             for (final c in currencies) {
               final rows = expenseTxns
@@ -332,7 +515,7 @@ class PdfService {
 
           // ── 3. 各人消费 — what the trip cost each person, spelled out ─────
           if (includePersonSpend) {
-            out.add(pw.Header(level: 1, text: '各人消费 · Per-person Spend'));
+            out.add(_sectionHeader('各人消费', 'PER-PERSON SPEND'));
             out.add(_legend(
                 '每人这趟实际花掉的钱：个人消费全额 + 每笔 AA 的人头份 + 自己请客的全额'
                 '（别人请客不计）。「÷N」是该笔分摊的人数。这里不代表谁欠谁 —— 见最终结算。'));
@@ -354,7 +537,7 @@ class PdfService {
 
           // ── 4. Payment Statement (Req G #2, default OFF) ──────────────────
           if (includeStatement) {
-            out.add(pw.Header(level: 1, text: '付款表 · Payment Statement'));
+            out.add(_sectionHeader('付款表', 'PAYMENT STATEMENT'));
             out.add(_legend(
                 '抵消前的明细：每行一位欠款人，单元格 = 该行欠该列（收款人）的金额。'
                 '被排除在某笔分摊外的人，那笔不产生欠款。'));
@@ -374,7 +557,7 @@ class PdfService {
           // Grouped by person so each reader finds their own name and reads off
           // exactly what to do, rather than scanning a flat list of arrows.
           if (includeConsolidate) {
-            out.add(pw.Header(level: 1, text: '最终结算 · Final Consolidate'));
+            out.add(_sectionHeader('最终结算', 'FINAL CONSOLIDATE'));
             out.add(_legend(
                 '两两互欠抵消后实际要转的账。找自己的名字，照着转即两清。'
                 '每笔转账会同时出现在付款人和收款人名下（一次转账，两边各记一次）。'));
@@ -389,8 +572,8 @@ class PdfService {
             }
             if (!any) {
               out.add(pw.Text('全部结清 · All settled up!',
-                  style: const pw.TextStyle(
-                      fontSize: 12, color: PdfColors.green700)));
+                  style: pw.TextStyle(
+                      fontSize: 12, color: PdfColor.fromHex('#4E7A52'))));
             }
           }
 
@@ -402,13 +585,66 @@ class PdfService {
     return pdf.save();
   }
 
+  static pw.Widget _diamond(double size, PdfColor color) =>
+      pw.Transform.rotateBox(
+          angle: 3.14159265 / 4,
+          child: pw.Container(width: size, height: size, color: color));
+
+  static pw.Widget _dashedLine() => pw.Container(
+        height: 0.75,
+        decoration: pw.BoxDecoration(
+          border: pw.Border(bottom: _dashedSide.copyWith(color: _dash)),
+        ),
+      );
+
+  /// Section band: diamond bullet + 中文 title + letter-spaced English echo,
+  /// ruled underneath — replaces the pdf package's default black Header.
+  static pw.Widget _sectionHeader(String zh, String en) => pw.Container(
+        margin: const pw.EdgeInsets.only(top: 14, bottom: 8),
+        padding: const pw.EdgeInsets.only(bottom: 5),
+        decoration: pw.BoxDecoration(
+            border:
+                pw.Border(bottom: pw.BorderSide(color: _line, width: 0.75))),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            _diamond(4, _clay),
+            pw.SizedBox(width: 7),
+            pw.Text(zh,
+                style: pw.TextStyle(
+                    fontSize: 13,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _clayDeep)),
+            pw.SizedBox(width: 8),
+            pw.Text(en,
+                style: pw.TextStyle(
+                    fontSize: 7, color: _mutedTx, letterSpacing: 1.6)),
+          ],
+        ),
+      );
+
+  /// Shared table dressing: tinted header band, clay header text, hairline
+  /// row rules instead of the package's default full black grid.
+  static pw.TableBorder get _tableBorder => pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _dash, width: 0.5),
+        bottom: pw.BorderSide(color: _line, width: 0.75),
+      );
+  static pw.BoxDecoration get _tableHeaderDeco =>
+      pw.BoxDecoration(color: _tint);
+  static pw.TextStyle _tableHeaderStyle({double fontSize = 9.5}) =>
+      pw.TextStyle(
+          fontWeight: pw.FontWeight.bold,
+          fontSize: fontSize,
+          color: _clayDeep);
+
   static pw.Widget _currencySubheader(String currency) => pw.Padding(
         padding: const pw.EdgeInsets.only(top: 6, bottom: 4),
         child: pw.Text(currency,
             style: pw.TextStyle(
-                fontSize: 13,
+                fontSize: 11.5,
                 fontWeight: pw.FontWeight.bold,
-                color: PdfColors.brown700)),
+                color: _clay,
+                letterSpacing: 0.8)),
       );
 
   /// One-line how-to-read note under a section header. The statement goes to
@@ -417,13 +653,13 @@ class PdfService {
   static pw.Widget _legend(String text) => pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 6),
         child: pw.Text(text,
-            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+            style: pw.TextStyle(fontSize: 8.5, color: _mutedTx)),
       );
 
   static pw.Widget _emptyNote(String text) => pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 8),
         child: pw.Text(text,
-            style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600)),
+            style: pw.TextStyle(fontSize: 10.5, color: _mutedTx)),
       );
 
   /// People in trip-roster order (the statement's row order), falling back to
@@ -497,10 +733,10 @@ class PdfService {
                 ],
               ['合计', formatMoneyWithSymbol(total, currency), '100%'],
             ],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            headerDecoration:
-                const pw.BoxDecoration(color: PdfColors.brown100),
-            cellStyle: const pw.TextStyle(fontSize: 10),
+            border: _tableBorder,
+            headerStyle: _tableHeaderStyle(),
+            headerDecoration: _tableHeaderDeco,
+            cellStyle: pw.TextStyle(fontSize: 10, color: _ink),
             cellAlignments: {
               0: pw.Alignment.centerLeft,
               1: pw.Alignment.centerRight,
@@ -557,9 +793,10 @@ class PdfService {
     return pw.TableHelper.fromTextArray(
       headers: ['参与者', '承担明细', '合计'],
       data: data,
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.brown100),
-      cellStyle: const pw.TextStyle(fontSize: 9),
+      border: _tableBorder,
+      headerStyle: _tableHeaderStyle(),
+      headerDecoration: _tableHeaderDeco,
+      cellStyle: pw.TextStyle(fontSize: 9, color: _ink),
       columnWidths: {
         0: const pw.FlexColumnWidth(1.4),
         1: const pw.FlexColumnWidth(5),
@@ -587,17 +824,25 @@ class PdfService {
       if (pays.isEmpty && collects.isEmpty) continue;
 
       out.add(pw.Padding(
-        padding: const pw.EdgeInsets.only(top: 6, bottom: 2),
-        child: pw.Text(nameOf(pid),
-            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        padding: const pw.EdgeInsets.only(top: 6, bottom: 3),
+        child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              _diamond(3.5, _clay),
+              pw.SizedBox(width: 6),
+              pw.Text(nameOf(pid),
+                  style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                      color: _ink)),
+            ]),
       ));
       for (final d in pays) {
-        out.add(_settleLine(
-            '应付', nameOf(d.toPersonId), d.amount, currency, PdfColors.red700));
+        out.add(_settleLine('应付', nameOf(d.toPersonId), d.amount, currency,
+            PdfColor.fromHex('#B85450')));
       }
       for (final d in collects) {
         out.add(_settleLine('应收', nameOf(d.fromPersonId), d.amount, currency,
-            PdfColors.green700));
+            PdfColor.fromHex('#4E7A52')));
       }
     }
     return out;
@@ -660,10 +905,10 @@ class PdfService {
                     bearer(t),
                   ])
               .toList(),
-          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-          headerDecoration:
-              const pw.BoxDecoration(color: PdfColors.brown100),
-          cellStyle: const pw.TextStyle(fontSize: 9),
+          border: _tableBorder,
+          headerStyle: _tableHeaderStyle(),
+          headerDecoration: _tableHeaderDeco,
+          cellStyle: pw.TextStyle(fontSize: 9, color: _ink),
           columnWidths: {
             0: const pw.FlexColumnWidth(1.6),
             1: const pw.FlexColumnWidth(2.4),
@@ -683,7 +928,9 @@ class PdfService {
           child: pw.Text('小计 ${formatMoneyWithSymbol(total, currency)}',
               textAlign: pw.TextAlign.right,
               style: pw.TextStyle(
-                  fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: _clayDeep)),
         ),
       ],
     );
@@ -718,10 +965,10 @@ class PdfService {
     return pw.TableHelper.fromTextArray(
       headers: headers,
       data: data,
-      headerStyle:
-          pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.brown100),
-      cellStyle: const pw.TextStyle(fontSize: 10),
+      border: _tableBorder,
+      headerStyle: _tableHeaderStyle(fontSize: 10),
+      headerDecoration: _tableHeaderDeco,
+      cellStyle: pw.TextStyle(fontSize: 10, color: _ink),
       // Name column left, every money column right so the digits line up.
       cellAlignments: {
         0: pw.Alignment.centerLeft,
